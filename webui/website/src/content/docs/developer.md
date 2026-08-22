@@ -12,6 +12,61 @@ The primary source repository is on
 [GitHub](https://github.com/asciimoo/hister). It is also mirrored on
 [Codeberg](https://codeberg.org/asciimoo/hister).
 
+## Contributing to Hister
+
+Read the complete
+[contribution guide](https://github.com/asciimoo/hister/blob/main/CONTRIBUTING.md)
+before starting work. Keep each pull request focused on one concern, explain
+why the change is needed, and make sure relevant tests and checks pass. Open an
+issue before implementing a large architectural change, broad refactor, or
+development tooling change so the approach can be discussed first.
+
+Ask questions when requirements or existing behavior are unclear. Review
+feedback concerns the work and the shared goal of improving Hister. A useful
+contribution should provide more value to the project than the time required to
+review and maintain it.
+
+### Project Standards
+
+**Go code.** Follow the GolangCI Lint v2 configuration in `.golangci.toml`.
+Formatting uses `goimports` and `gofumpt`. Run focused package tests during
+development and `go test ./...` before submitting a broad change.
+
+**Frontend code.** Prettier uses single quotes, trailing commas, a print width
+of 100, and two space indentation. Prefer standard Tailwind scale classes.
+Check the shared component library before creating a new component.
+
+**Change scope.** Preserve compatibility unless the change explicitly requires
+otherwise. Update tests and user documentation whenever behavior, command
+flags, configuration, query syntax, or public interfaces change. Keep release
+notes for the release process.
+
+**Licensing.** Contributions are accepted under the project
+[AGPLv3 license](https://github.com/asciimoo/hister/blob/main/LICENSE).
+
+**AI use.** The contribution guide requires disclosure of every AI tool and the
+extent of its use. The human contributor must understand the complete change
+and remain its main author. Issue descriptions, pull request descriptions, and
+discussion comments must be written by a human. AI tools must not be used for
+good first issues. Coding agents should also follow the repository
+[agent reference](https://github.com/asciimoo/hister/blob/main/AGENTS.md).
+
+### Useful Development Links
+
+| Resource                                                                                                           | Purpose                                                        |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| [Contribution guide](https://github.com/asciimoo/hister/blob/main/CONTRIBUTING.md)                                 | Submission standards, code style, and AI policy                |
+| [`manage.sh`](https://github.com/asciimoo/hister/blob/main/manage.sh)                                              | Common dependency, test, build, and artifact commands          |
+| [Go module](https://github.com/asciimoo/hister/blob/main/go.mod)                                                   | Go version, module path, and backend dependencies              |
+| [Go lint configuration](https://github.com/asciimoo/hister/blob/main/.golangci.toml)                               | Enabled Go formatters and linters                              |
+| [Frontend workspace](https://github.com/asciimoo/hister/blob/main/package.json)                                    | npm workspaces, formatting, and frontend checks                |
+| [Frontend notes](https://github.com/asciimoo/hister/blob/main/webui/README.md)                                     | Web project structure, builds, previews, and shared components |
+| [`webui/build.sh`](https://github.com/asciimoo/hister/blob/main/webui/build.sh)                                    | Embedded web application build process                         |
+| [API route registry](https://github.com/asciimoo/hister/blob/main/server/api.go)                                   | HTTP endpoint declarations and generated API documentation     |
+| [Extractor template](https://github.com/asciimoo/hister/tree/main/server/extractor/extractors/_extractor_template) | Starting point for a new extractor                             |
+| [Issue tracker](https://github.com/asciimoo/hister/issues)                                                         | Bug reports, proposals, and feature discussions                |
+| [Security policy](https://github.com/asciimoo/hister/blob/main/SECURITY.md)                                        | Private security reporting guidance                            |
+
 ## Source Layout
 
 | Path                | Purpose                                                                 |
@@ -51,6 +106,8 @@ Use these commands for common work:
 | Build the web application             | `npm run build -w @hister/app`     |
 | Build this documentation website      | `npm run build -w @hister/website` |
 | Build the browser extension           | `npm run build -w @hister/ext`     |
+| Run the app development servers       | `npm run serve:app`                |
+| Format and lint Go code               | `golangci-lint run --fix ./...`    |
 | Check frontend formatting and linting | `npm run check`                    |
 | Apply frontend formatting             | `npm run format`                   |
 
@@ -58,6 +115,10 @@ Use these commands for common work:
 `server/static/app`, and copies the new frontend build into the embedded asset
 directory. Run it before building the Go binary whenever embedded frontend code
 changes.
+
+`npm run serve:app` starts the web application with hot reload and the Go
+server with automatic rebuilds. It installs `air` when that tool is not already
+available.
 
 Use focused tests while developing. Run the complete Go suite before handing
 off a broad or high risk change.
