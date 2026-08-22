@@ -101,10 +101,15 @@ hister update 'label:inbox' --label archive --dry
 hister update 'label:inbox' --label archive --yes
 ```
 
-Changing `user_id` requires administrator access. User ID `0` makes a document global. An
-ownership change never overwrites a document that already has the same URL and destination owner.
-Those documents are reported as conflicts and skipped. Stored version records move with a changed
-owner, while search history stays with the user who created it.
+Changing `user_id` requires administrator access. User ID `0` is reserved for global documents and
+does not represent a user account. Documents indexed before user handling was enabled normally
+belong to user ID `0`. Global documents are visible to every authenticated user and, when public
+mode is enabled, to anonymous visitors. Use `user_id:0` in the query to select global documents.
+Use `--user-id 0` as the change to make matching documents global.
+
+An ownership change never overwrites a document that already has the same URL and destination
+owner. Those documents are reported as conflicts and skipped. Stored version records move with a
+changed owner, while search history stays with the user who created it.
 
 For a watched local file, its configured directory `user` must match the destination owner. Future
 indexing can replace a manually changed title, language, or owner, so update the responsible

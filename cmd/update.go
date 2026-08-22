@@ -18,6 +18,10 @@ var updateDocumentsCmd = &cobra.Command{
 Supported attributes are owner user ID, label, title, and language. An empty
 label or title clears that value. Use "unknown" to clear a detected language.
 
+User ID 0 is reserved for global documents and does not represent a user
+account. The query "user_id:0" selects global documents, while "--user-id 0"
+makes the matching documents global and visible to every user.
+
 Changing an owner requires administrator access. A move is skipped when the
 destination user already owns a document with the same URL. Local file moves
 also require the configured watched directory owner to match the destination.
