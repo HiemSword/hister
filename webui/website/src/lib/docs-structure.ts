@@ -30,4 +30,9 @@ export const docsStructure: DocsCategory[] = [
     slugs: ['configuration', 'server-setup', 'docker', 'troubleshooting'],
     color: 'teal',
   },
+  {
+    name: 'Development',
+    slugs: ['developer'],
+    color: 'indigo',
+  },
 ];

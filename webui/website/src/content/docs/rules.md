@@ -64,17 +64,6 @@ panel shows a previous version count. Clicking it opens a changelog with each
 recorded diff and timestamp. From there you can inspect a diff or reconstruct
 and display an archived version.
 
-#### API
-
-```
-GET /api/versions?url=<url>
-```
-
-Returns all stored version diffs for the given URL (newest first). Each entry
-contains `id`, `created_at`, `url`, `user_id`, `html_diff`, and `text_diff`
-fields. The diff values are [diff-match-patch](https://github.com/google/diff-match-patch)
-patch strings.
-
 ### Aliases
 
 Aliases are query-time shortcuts: before Hister executes a search, it replaces

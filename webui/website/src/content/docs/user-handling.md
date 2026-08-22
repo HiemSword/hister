@@ -161,7 +161,7 @@ Skip rules apply upon the **full** URL (from protocol to the query-string parame
 - Anchoring must include the protocol: Eg `^https://foo.com` or `^https?://(login|mail)\.` but no `^foo.com`
 - `/login$` would **not** match `https://foo.com/login?auth=1`
 - URL hash is removed (`https://foo.com/#active-tab` -> `https://foo.com/`)
-- Query-string parameters are **not reordered** and barely stripped (only `utm_*` [at the moment](https://github.com/asciimoo/hister/blob/master/server/document/document.go#L137))
+- Query string parameters are **not reordered**. Only `utm_*` parameters are stripped.
 - [Go regular expression](https://pkg.go.dev/regexp/syntax) does not support look-ahead/look-behind regexp.
 
 ## Admin Users
@@ -214,18 +214,6 @@ Every user account has a personal access token used for API authentication. Toke
 - Generate a new token from the web UI (Profile → Generate Token) or via `hister update-user --regen-token`.
 - Generating a new token immediately invalidates the previous one. Update any clients (browser extension, scripts) accordingly.
 - Tokens are not displayed in `show-user` output by default; use `--token` to reveal them.
-
-## Profile API
-
-The `/api/profile` endpoint returns information about the currently authenticated user:
-
-```json
-{
-  "user_id": 1,
-  "username": "alice",
-  "is_admin": true
-}
-```
 
 ## Security Considerations
 
