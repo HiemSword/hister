@@ -28,6 +28,7 @@ import (
 	"github.com/asciimoo/hister/server/indexer/searchschema"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/timeline"
+	"github.com/asciimoo/hister/server/types"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -871,6 +872,57 @@ func serveUpdateLabel(c *webContext) {
 		return
 	}
 	c.JSON(map[string]any{"ok": true})
+}
+
+func serveUpdateDocuments(c *webContext) {
+	var req types.UpdateDocumentsRequest
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Changes.UserID != nil {
+		if !c.Config.App.UserHandling {
+			http.Error(c.Response, "changing document ownership requires user handling", http.StatusBadRequest)
+			return
+		}
+		if !c.IsAdmin {
+			http.Error(c.Response, "admin permission required to change document ownership", http.StatusForbidden)
+			return
+		}
+		if *req.Changes.UserID != 0 {
+			if _, err := model.GetUserByID(*req.Changes.UserID); err != nil {
+				http.Error(c.Response, "target user not found", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	var sourceUserID *uint
+	if c.Config.App.UserHandling && !c.IsAdmin {
+		sourceUserID = &c.UserID
+	}
+	result, err := c.Indexer.UpdateByQuery(req.Query, sourceUserID, req.Changes, req.DryRun)
+	if err != nil {
+		switch {
+		case errors.Is(err, indexer.ErrEmptyFilter),
+			errors.Is(err, indexer.ErrEmptyUpdate),
+			errors.Is(err, indexer.ErrInvalidLanguage):
+			http.Error(c.Response, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, indexer.ErrFileURLNotAllowed):
+			http.Error(c.Response, err.Error(), http.StatusConflict)
+		default:
+			log.Error().Err(err).Msg("document update failed")
+			serve500(c)
+		}
+		return
+	}
+	if !req.DryRun {
+		for _, change := range result.OwnershipChanges {
+			if err := model.MoveDocumentVersions(change.URL, change.FromUserID, change.ToUserID); err != nil {
+				log.Warn().Err(err).Str("url", change.URL).Msg("failed to move document versions to the new owner")
+			}
+		}
+	}
+	c.JSON(result)
 }
 
 func serveHistory(c *webContext) {

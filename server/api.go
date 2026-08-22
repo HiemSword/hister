@@ -515,6 +515,40 @@ func init() {
 			},
 		},
 		{
+			Name:         "Update documents",
+			Path:         "/api/update",
+			Method:       POST,
+			CSRFRequired: true,
+			Handler:      serveUpdateDocuments,
+			Description:  "Update mutable attributes on documents matching a search query. Regular users are restricted to their own documents. Changing ownership requires an administrator.",
+			JSONSchema: []*JSONSchemaField{
+				{
+					Name:        "query",
+					Type:        "string",
+					Required:    true,
+					Description: "Search query selecting documents to update",
+				},
+				{
+					Name:        "changes",
+					Type:        "object",
+					Required:    true,
+					Description: "Document attributes to change",
+					Fields: []*JSONSchemaField{
+						{Name: "user_id", Type: "integer", Required: false, Description: "New owner user ID; 0 makes the document global"},
+						{Name: "label", Type: "string", Required: false, Description: "New label; an empty value clears it"},
+						{Name: "title", Type: "string", Required: false, Description: "New title; an empty value clears it"},
+						{Name: "language", Type: "string", Required: false, Description: "New supported language code, or unknown"},
+					},
+				},
+				{
+					Name:        "dry_run",
+					Type:        "bool",
+					Required:    false,
+					Description: "Return counts without changing documents",
+				},
+			},
+		},
+		{
 			Name:         "Rules",
 			Path:         "/api/rules",
 			Method:       GET,

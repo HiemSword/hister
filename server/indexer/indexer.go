@@ -303,7 +303,7 @@ var (
 	registerHighlightersErr  error
 	// allFields      []string       = []string{"url", "title", "text", "favicon", "html", "domain", "added", "updated", "type", "user_id"}
 	allFields            []string       = []string{"*"}
-	ErrEmptyFilter                      = errors.New("delete query must not be empty")
+	ErrEmptyFilter                      = errors.New("query must not be empty")
 	ErrFileURLNotAllowed                = errors.New("file URL is not allowed")
 	bleveConfig          map[string]any = map[string]any{
 		"bolt_timeout": "2s",
@@ -1545,15 +1545,9 @@ func (i *Indexer) Delete(id string) error {
 }
 
 func (i *Indexer) DeleteByQuery(text string, userID *uint, onDelete func(url string, userID uint)) (int, error) {
-	if strings.TrimSpace(text) == "" {
-		return 0, ErrEmptyFilter
-	}
-	q := querybuilder.Build(text)
-	if userID != nil {
-		uid := float64(*userID)
-		userQ := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
-		userQ.SetField("user_id")
-		q = bleve.NewConjunctionQuery(q, userQ)
+	q, err := documentMutationQuery(text, userID)
+	if err != nil {
+		return 0, err
 	}
 
 	count := 0

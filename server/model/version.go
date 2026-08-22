@@ -30,6 +30,16 @@ func SaveDocumentVersion(url string, userID uint, htmlDiff, textDiff string) err
 	return DB.Create(v).Error
 }
 
+// MoveDocumentVersions assigns stored versions of a document to a new owner.
+func MoveDocumentVersions(url string, fromUserID, toUserID uint) error {
+	if fromUserID == toUserID {
+		return nil
+	}
+	return DB.Model(&DocumentVersion{}).
+		Where("url = ? AND user_id = ?", url, fromUserID).
+		Update("user_id", toUserID).Error
+}
+
 // CountDocumentVersions returns the number of stored versions for a URL and user.
 func CountDocumentVersions(url string, userID uint) (int64, error) {
 	var count int64

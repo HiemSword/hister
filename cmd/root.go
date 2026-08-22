@@ -271,6 +271,7 @@ func init() {
 	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(checkUpdateCmd)
 	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(updateDocumentsCmd)
 	rootCmd.AddCommand(createUserCmd)
 	rootCmd.AddCommand(deleteUserCmd)
 	rootCmd.AddCommand(showUserCmd)
@@ -329,6 +330,13 @@ func init() {
 	deleteCmd.Flags().Bool("dry", false, "display the number of documents that would be deleted without actually deleting them")
 	deleteCmd.Flags().BoolP("verbose", "v", false, "list all URLs that would be deleted before performing the deletion. Can be used with --dry")
 	deleteCmd.Flags().BoolP("yes", "y", false, "delete without prompting for confirmation")
+
+	updateDocumentsCmd.Flags().Uint("user-id", 0, "new owner user ID; 0 makes documents global")
+	updateDocumentsCmd.Flags().String("label", "", "new label; an empty value clears the label")
+	updateDocumentsCmd.Flags().String("title", "", "new title; an empty value clears the title")
+	updateDocumentsCmd.Flags().String("language", "", "new supported language code, or unknown")
+	updateDocumentsCmd.Flags().Bool("dry", false, "display the number of affected documents without updating them")
+	updateDocumentsCmd.Flags().BoolP("yes", "y", false, "update without prompting for confirmation")
 
 	deleteUserCmd.Flags().Bool("purge", false, "also delete all indexed documents belonging to the user")
 

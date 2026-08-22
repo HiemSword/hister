@@ -79,6 +79,37 @@ To manually index a specific URL:
 For persistent recursive crawls, URL input jobs, custom job names, resume behavior, request
 backends, and every `crawl` subcommand, see [Website Crawler](crawler).
 
+### Updating Document Attributes
+
+Use `hister update` to change attributes on every document selected by the query language:
+
+```bash
+hister update 'user_id:0' --user-id 2
+hister update 'domain:example.com' --label research
+hister update 'language:unknown' --language en
+```
+
+The supported attributes are `user_id`, `label`, `title`, and `language`. Pass an empty label or
+title to clear it. Use `unknown` to clear a detected language. Hister reports the number of
+matching, changed, unchanged, and conflicting documents.
+
+The command previews the operation and asks for confirmation. Use `--dry` to preview without
+applying changes, or `--yes` to apply immediately:
+
+```bash
+hister update 'label:inbox' --label archive --dry
+hister update 'label:inbox' --label archive --yes
+```
+
+Changing `user_id` requires administrator access. User ID `0` makes a document global. An
+ownership change never overwrites a document that already has the same URL and destination owner.
+Those documents are reported as conflicts and skipped. Stored version records move with a changed
+owner, while search history stays with the user who created it.
+
+For a watched local file, its configured directory `user` must match the destination owner. Future
+indexing can replace a manually changed title, language, or owner, so update the responsible
+collector or directory configuration when the change should remain permanent.
+
 ### Exporting Documents
 
 Use `hister export` to write indexed documents to a JSON file. This is useful for

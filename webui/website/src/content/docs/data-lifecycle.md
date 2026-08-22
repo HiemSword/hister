@@ -19,6 +19,7 @@ Hister keeps current searchable documents until you replace or delete them. It d
 | A watched file changes                                | Hister updates its searchable document                                                                          |
 | A watched file is removed                             | Hister keeps the document unless `delete_on_remove: true` is configured                                         |
 | A remote file snapshot is imported again              | Hister replaces the document with the same source and absolute path                                             |
+| `hister update` changes document attributes           | Hister updates matching current records and moves identity state when ownership changes                         |
 | The source of a remote file snapshot changes or moves | No change occurs until the client imports it again                                                              |
 | A source bookmark or browser history entry is removed | No change occurs in Hister                                                                                      |
 | A document is deleted in Hister                       | The current index record and associated current assets are removed                                              |
@@ -158,6 +159,12 @@ Deleting a crawl job removes its queue and status records. It does not delete do
 All users share the server storage and search index files, but each current document has an owner ID. Normal searches for an authenticated user include that user's documents and global documents owned by user ID `0`.
 
 A regular user can delete only their own current documents. An administrator deletion request has no automatic owner restriction and can affect other users. The command line `--dry` check uses normal administrator search scope, so it does not reveal matching documents owned by other users. On a shared server, constrain an administrator deletion query with `user_id:ID` and never infer its full impact from the dry run count alone.
+
+Use `hister update QUERY --user-id ID` to change ownership without exporting and importing current
+documents. The operation preserves current indexed content and stored version records. It skips a
+move when the destination owner already has the same URL. Search history remains associated with
+the user who created it. A regular user can update labels, titles, and languages only on their own
+documents, while ownership changes require an administrator.
 
 Deleting a user with `hister delete-user USERNAME --purge` asks the server to remove current indexed documents detected by its preflight, then soft deletes the account. Verify the result because this is not complete data erasure and records or current documents missed by the preflight can remain. See [`delete-user`](user-handling#delete-user) for details.
 

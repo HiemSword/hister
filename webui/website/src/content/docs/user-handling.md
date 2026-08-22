@@ -179,6 +179,17 @@ Grant or revoke admin status using `create-user --admin` (at creation time) or `
 
 Hister reserves user ID `0` for unauthenticated use. Documents indexed without user handling enabled are stored under user ID `0` and remain visible to all authenticated users after the feature is turned on. This means you can enable user handling on an existing instance without losing access to previously indexed content.
 
+To make existing global documents private to one user, find the numeric user ID with
+`hister show-user USERNAME`, then run the query update as an administrator:
+
+```bash
+hister update 'user_id:0' --user-id USER_ID
+```
+
+Preview the affected count with `--dry`. Ownership conflicts are skipped when that user already
+owns the same URL. Watched local files also require the directory configuration `user` value to
+match the new owner.
+
 ## Document Isolation
 
 Each user's indexed documents are stored with their user ID. Searches are automatically scoped to:
