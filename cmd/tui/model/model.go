@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 
@@ -38,12 +39,22 @@ type Model struct {
 	Spinner   spinner.Model
 	Help      help.Model
 	Keys      component.KeyMap
+	Details   viewport.Model
 	Workspace viewport.Model
 	State     ViewState
 	PrevState ViewState
 	Cfg       *config.Config
 	Client    *client.Client
 	Results   *indexer.Results
+
+	// Readable preview pane. DetailsURL is also the pane-open flag so modal
+	// dialogs can retain the split view behind them.
+	DetailsURL       string
+	DetailsHintTitle string
+	DetailsPreview   *client.PreviewResponse
+	DetailsErr       error
+	DetailsLoading   bool
+	DetailsFocused   bool
 
 	// Dimensions and readiness
 	Width, Height int
@@ -68,6 +79,7 @@ type Model struct {
 	Limit       int
 	IsSearching bool
 	SortMode    string // "" for relevance, "domain" for domain
+	SemanticOn  bool
 
 	// Rendering
 	Styles theme.Styles
@@ -160,6 +172,8 @@ type Model struct {
 	PrioritizeURL    string
 	PrioritizeInput  textinput.Model
 	PrioritizeBtnIdx int // 0=Cancel, 1=Confirm
+	LabelInput       textinput.Model
+	LabelURL         string
 
 	// Tips rotation
 	TipIdx int
@@ -222,6 +236,7 @@ func InitialModel(cfg *config.Config) *Model {
 		RulesFormFocus:     RulesFocusList, // start on list
 		RulesEditingIdx:    -1,
 		PrioritizeInput:    newInput("URL pattern...", 500, 40, st),
+		LabelInput:         newInput("Label (empty clears it)", 200, 50, st),
 		TipIdx:             rand.Intn(len(SearchTips)),
 	}
 	for _, section := range RulesSections {
@@ -230,6 +245,7 @@ func InitialModel(cfg *config.Config) *Model {
 		}
 		m.RulesPatternInputs[section.ID] = newInput(section.Placeholder, 200, 40, st)
 	}
+	m.Details = viewport.New(72, 18)
 	m.Workspace = viewport.New(80, 20)
 	if m.ThemePickerMode == "" {
 		m.ThemePickerMode = "auto"
@@ -252,6 +268,7 @@ func (m *Model) ApplyTheme(p theme.Palette) {
 	applyInputStyles(&m.RulesAliasKeyInput, m.Styles)
 	applyInputStyles(&m.RulesAliasValInput, m.Styles)
 	applyInputStyles(&m.PrioritizeInput, m.Styles)
+	applyInputStyles(&m.LabelInput, m.Styles)
 	m.Spinner.Style = m.Styles.Spin
 	applyHelpStyles(&m.Help, m.Styles)
 	m.SetTerminalBg(p.Base00)
@@ -335,11 +352,63 @@ func (m *Model) GetSelectedDocument() *document.Document {
 	return nil
 }
 
+// VisibleDocuments merges keyword and semantic-only results into the order
+// presented by the TUI. It deliberately returns a new slice and never mutates
+// the server response, which keeps selection and re-rendering deterministic.
 func (m *Model) VisibleDocuments() []*document.Document {
 	if m.Results == nil {
 		return nil
 	}
-	return slices.Clone(m.Results.Documents)
+	documents := slices.Clone(m.Results.Documents)
+	if !m.SemanticOn || len(m.Results.SemanticHits) == 0 {
+		return documents
+	}
+
+	seen := make(map[string]bool, len(documents))
+	byID := make(map[string]*document.Document, len(documents))
+	for _, doc := range documents {
+		seen[doc.URL] = true
+		byID[document.GetDocID(doc.UserID, doc.URL)] = doc
+	}
+	semanticScores := make(map[string]float64, len(m.Results.SemanticHits))
+	for _, hit := range m.Results.SemanticHits {
+		if hit.Document != nil {
+			semanticScores[hit.Document.URL] = hit.Similarity
+			if !seen[hit.Document.URL] {
+				documents = append(documents, hit.Document)
+				seen[hit.Document.URL] = true
+				byID[document.GetDocID(hit.Document.UserID, hit.Document.URL)] = hit.Document
+			}
+		}
+		if doc := byID[hit.DocID]; doc != nil {
+			semanticScores[doc.URL] = hit.Similarity
+		}
+	}
+	if m.SortMode == "domain" {
+		sort.SliceStable(documents, func(i, j int) bool {
+			if documents[i].Domain == documents[j].Domain {
+				return documents[i].Score > documents[j].Score
+			}
+			return documents[i].Domain < documents[j].Domain
+		})
+		return documents
+	}
+
+	maxKeywordScore := 1.0
+	for _, doc := range documents {
+		maxKeywordScore = max(maxKeywordScore, doc.Score)
+	}
+	weight := m.Cfg.SemanticSearch.SemanticWeight
+	if weight <= 0 || weight >= 1 {
+		weight = 0.4
+	}
+	combinedScore := func(doc *document.Document) float64 {
+		return (1-weight)*(doc.Score/maxKeywordScore) + weight*semanticScores[doc.URL]
+	}
+	sort.SliceStable(documents, func(i, j int) bool {
+		return combinedScore(documents[i]) > combinedScore(documents[j])
+	})
+	return documents
 }
 
 func (m *Model) SortedSettingsItems() []SettingsItem {
@@ -431,7 +500,11 @@ func (m *Model) DismissDialog() {
 		m.DialogReturnTab = -1
 		return
 	}
-	m.State = StateResults
+	if m.DetailsURL != "" {
+		m.State = StateDetails
+	} else {
+		m.State = StateResults
+	}
 }
 
 func (m *Model) OpenContextMenu(idx, x, y, offX, offY int) {
@@ -451,6 +524,18 @@ func (m *Model) StartDrag(x, y int) {
 func (m *Model) Close() {
 	m.ResetTerminalBg()
 	close(m.WsDone)
+}
+
+func (m *Model) ResetDetails() []int {
+	m.DetailsURL = ""
+	m.DetailsHintTitle = ""
+	m.DetailsPreview = nil
+	m.DetailsErr = nil
+	m.DetailsLoading = false
+	m.DetailsFocused = false
+	m.Details.SetContent("")
+	m.Details.GotoTop()
+	return nil
 }
 
 func (m *Model) FocusedRulesInput() *textinput.Model {
@@ -605,6 +690,19 @@ func (m *Model) DeleteHistoryEntryCmd(query, url string) tea.Cmd {
 		}
 		items, err := m.Client.FetchHistory()
 		return HistoryFetchedMsg{Items: items, Err: err}
+	}
+}
+
+func (m *Model) UpdateLabelCmd(url, label string) tea.Cmd {
+	return func() tea.Msg {
+		return LabelSavedMsg{URL: url, Label: label, Err: m.Client.UpdateLabel(url, label)}
+	}
+}
+
+func (m *Model) FetchPreviewCmd(urlStr string) tea.Cmd {
+	return func() tea.Msg {
+		preview, err := m.Client.FetchPreview(urlStr)
+		return PreviewFetchedMsg{URL: urlStr, Preview: preview, Err: err}
 	}
 }
 

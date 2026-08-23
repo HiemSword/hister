@@ -5,6 +5,8 @@
 package handle
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/asciimoo/hister/cmd/tui/model"
@@ -13,6 +15,7 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 
+	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
@@ -42,13 +45,46 @@ func DispatchCommonAction(m *model.Model, action config.Action) (tea.Cmd, bool) 
 			m.SortMode = ""
 		}
 		return startSearch(m, m.FlashHint(config.ActionToggleSort)), true
+	case config.ActionToggleSemantic:
+		if !m.Cfg.SemanticSearch.Enable {
+			return m.Notify("Semantic search is not enabled on this server"), true
+		}
+		m.SemanticOn = !m.SemanticOn
+		if m.SemanticOn {
+			return startSearch(m, m.Notify("Semantic search on"), m.FlashHint(action)), true
+		}
+		return startSearch(m, m.Notify("Semantic search off"), m.FlashHint(action)), true
 	case config.ActionScrollUp:
+		if m.State == model.StateDetails {
+			if m.DetailsFocused || !render.DetailsSplit(m) {
+				m.Details.ScrollUp(1)
+				return m.FlashHint(action), true
+			}
+			if m.SelectedIdx > 0 {
+				m.SelectedIdx--
+				render.RefreshAndScroll(m)
+				return tea.Batch(ReloadDetails(m), m.FlashHint(action)), true
+			}
+			return nil, true
+		}
 		if m.SelectedIdx > 0 {
 			m.SelectedIdx--
 			render.RefreshAndScroll(m)
 		}
 		return m.FlashHint(config.ActionScrollUp), true
 	case config.ActionScrollDown:
+		if m.State == model.StateDetails {
+			if m.DetailsFocused || !render.DetailsSplit(m) {
+				m.Details.ScrollDown(1)
+				return m.FlashHint(action), true
+			}
+			if m.SelectedIdx < m.GetTotalResults()-1 && m.SelectedIdx+1 != m.Limit {
+				m.SelectedIdx++
+				render.RefreshAndScroll(m)
+				return tea.Batch(ReloadDetails(m), m.FlashHint(action)), true
+			}
+			return nil, true
+		}
 		if m.SelectedIdx < m.GetTotalResults()-1 {
 			m.SelectedIdx++
 			render.RefreshAndScroll(m)
@@ -61,10 +97,78 @@ func DispatchCommonAction(m *model.Model, action config.Action) (tea.Cmd, bool) 
 			})
 		}
 		return m.FlashHint(config.ActionDeleteResult), true
+	case config.ActionCopyResult:
+		return copySelectedURL(m), true
+	case config.ActionTogglePreview:
+		if m.State == model.StateDetails {
+			return CloseDetails(m), true
+		}
+		return OpenDetails(m), true
+	case config.ActionEditLabel:
+		return OpenLabelEditor(m), true
 	case config.ActionTabSearch, config.ActionTabHistory, config.ActionTabRules, config.ActionTabAdd:
 		return SwitchTab(m, action), true
 	}
 	return nil, false
+}
+
+func copySelectedURL(m *model.Model) tea.Cmd {
+	u := m.GetSelectedURL()
+	if m.ActiveTab == model.TabHistory && m.HistoryIdx >= 0 && m.HistoryIdx < len(m.HistoryItems) {
+		u = m.HistoryItems[m.HistoryIdx].URL
+	}
+	if u == "" {
+		return m.Notify("Nothing selected")
+	}
+	copyCmd := func() tea.Msg {
+		fmt.Fprint(os.Stderr, osc52.New(u))
+		return nil
+	}
+	return tea.Batch(copyCmd, m.Notify("URL copied"), m.FlashHint(config.ActionCopyResult))
+}
+
+func OpenDetails(m *model.Model) tea.Cmd {
+	return loadDetails(m, true, true)
+}
+
+// ReloadDetails updates an already-open pane after its result selection
+// changes while retaining result-list focus.
+func ReloadDetails(m *model.Model) tea.Cmd {
+	return loadDetails(m, false, false)
+}
+
+func loadDetails(m *model.Model, focusPreview, activate bool) tea.Cmd {
+	u := m.GetSelectedURL()
+	if u == "" {
+		return m.Notify("Nothing selected")
+	}
+	title := m.GetSelectedTitle()
+	m.ResetDetails()
+	m.DetailsURL = u
+	m.DetailsHintTitle = title
+	m.DetailsLoading = true
+	m.DetailsFocused = focusPreview
+	m.Details.SetContent(render.ResultDetailsContent(m))
+	m.Details.GotoTop()
+	if activate && m.State != model.StateDetails {
+		m.OpenOverlay(model.StateDetails)
+	}
+	render.ResizeSearchViewports(m)
+	render.RefreshAndScroll(m)
+	return tea.Batch(m.FetchPreviewCmd(u), m.Spinner.Tick)
+}
+
+func OpenLabelEditor(m *model.Model) tea.Cmd {
+	doc := m.GetSelectedDocument()
+	if doc == nil {
+		return m.Notify("Labels are available for indexed documents")
+	}
+	m.LabelURL = doc.URL
+	m.LabelInput.SetValue(doc.Label)
+	m.LabelInput.SetCursor(len([]rune(doc.Label)))
+	m.LabelInput.Focus()
+	m.OpenOverlay(model.StateLabelInput)
+	return nil
 }
 
 func ExecuteAction(m *model.Model, action config.Action) tea.Cmd {
@@ -83,6 +187,12 @@ func ExecuteAction(m *model.Model, action config.Action) tea.Cmd {
 		}
 		return m.FlashHint(config.ActionOpenResult)
 	case config.ActionToggleFocus:
+		if m.State == model.StateDetails {
+			if render.DetailsSplit(m) {
+				m.DetailsFocused = !m.DetailsFocused
+			}
+			return m.FlashHint(action)
+		}
 		if m.State == model.StateInput {
 			if m.GetTotalResults() > 0 {
 				m.State = model.StateResults
@@ -109,6 +219,7 @@ func SwitchTab(m *model.Model, action config.Action) tea.Cmd {
 	if m.ActiveTab == prevTab {
 		return nil
 	}
+	m.ResetDetails()
 	m.Workspace.GotoTop()
 	m.TextInput.Blur()
 	m.State = model.StateResults
@@ -150,15 +261,32 @@ func doSearch(m *model.Model) tea.Cmd {
 		}
 	}
 	return network.Search(m.Conn, &m.WsMu, m.WsReady, model.SearchQuery{
-		Text:      strings.TrimSpace(q),
-		Highlight: "tui",
-		Limit:     m.Limit + 1,
-		Sort:      m.SortMode,
+		Text:              strings.TrimSpace(q),
+		Highlight:         "tui",
+		Limit:             m.Limit + 1,
+		Sort:              m.SortMode,
+		SemanticEnabled:   m.SemanticOn,
+		SemanticThreshold: m.Cfg.SemanticSearch.SimilarityThreshold,
+		SemanticWeight:    m.Cfg.SemanticSearch.SemanticWeight,
 	})
 }
 
 func CloseOverlay(m *model.Model) tea.Cmd {
+	if m.State == model.StateDetails {
+		return CloseDetails(m)
+	}
 	m.DismissOverlay()
+	if m.State == model.StateInput {
+		return m.TextInput.Focus()
+	}
+	return nil
+}
+
+func CloseDetails(m *model.Model) tea.Cmd {
+	m.ResetDetails()
+	m.DismissOverlay()
+	render.ResizeSearchViewports(m)
+	render.RefreshAndScroll(m)
 	if m.State == model.StateInput {
 		return m.TextInput.Focus()
 	}
