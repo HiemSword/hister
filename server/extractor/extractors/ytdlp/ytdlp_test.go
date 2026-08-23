@@ -114,6 +114,8 @@ The cool thing about these guys is that they have really
 really really long trunks
 `
 
+const fakeBinaryTimeoutSeconds = 30
+
 // writeFakeBinary creates a shell script that handles both --dump-json and
 // --write-sub/--write-auto-sub invocations, returning its path.
 // The subtitle file is named using the --sub-lang value so that auto-mode
@@ -195,7 +197,7 @@ func newTestExtractor(t *testing.T, fetchSubs bool) (*YtdlpExtractor, *httptest.
 		Enable: true,
 		Options: map[string]any{
 			"binary":          writeFakeBinary(t, jsonContent),
-			"timeout":         5,
+			"timeout":         fakeBinaryTimeoutSeconds,
 			"fetch_subtitles": fetchSubs,
 			"sub_language":    "en",
 		},
@@ -440,7 +442,7 @@ func newTestExtractorFr(t *testing.T, subLang string) *YtdlpExtractor {
 		Enable: true,
 		Options: map[string]any{
 			"binary":          writeFakeBinary(t, jsonContent),
-			"timeout":         5,
+			"timeout":         fakeBinaryTimeoutSeconds,
 			"fetch_subtitles": true,
 			"sub_language":    subLang,
 		},
@@ -462,7 +464,7 @@ func newTestExtractorNoLang(t *testing.T, subLang string) *YtdlpExtractor {
 		Enable: true,
 		Options: map[string]any{
 			"binary":          writeFakeBinary(t, jsonContent),
-			"timeout":         5,
+			"timeout":         fakeBinaryTimeoutSeconds,
 			"fetch_subtitles": true,
 			"sub_language":    subLang,
 		},
@@ -540,7 +542,7 @@ func TestCaching(t *testing.T) {
 		Enable: true,
 		Options: map[string]any{
 			"binary":          writeFakeBinaryCounter(t, jsonContent, counterFile),
-			"timeout":         5,
+			"timeout":         fakeBinaryTimeoutSeconds,
 			"fetch_subtitles": false,
 			"sub_language":    "en",
 		},
