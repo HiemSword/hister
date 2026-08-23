@@ -57,10 +57,7 @@ func DispatchCommonAction(m *model.Model, action config.Action) (tea.Cmd, bool) 
 	case config.ActionDeleteResult:
 		if u := m.GetSelectedURL(); u != "" {
 			m.OpenDeleteDialog("Delete Result", u, -1, func() tea.Cmd {
-				return tea.Batch(
-					m.DeleteURLCmd(u),
-					doSearch(m),
-				)
+				return m.DeleteURLCmd(u)
 			})
 		}
 		return m.FlashHint(config.ActionDeleteResult), true
@@ -112,6 +109,7 @@ func SwitchTab(m *model.Model, action config.Action) tea.Cmd {
 	if m.ActiveTab == prevTab {
 		return nil
 	}
+	m.Workspace.GotoTop()
 	m.TextInput.Blur()
 	m.State = model.StateResults
 	var cmd tea.Cmd
@@ -124,7 +122,7 @@ func SwitchTab(m *model.Model, action config.Action) tea.Cmd {
 		cmd = m.FetchHistoryCmd()
 	case model.TabRules:
 		m.RulesLoading = true
-		m.RulesFormFocus = model.RulesFieldList
+		m.RulesFormFocus = model.RulesFocusList
 		m.RulesEditingIdx = -1
 		m.BlurAllRulesInputs()
 		cmd = m.FetchRulesCmd()
@@ -178,7 +176,7 @@ func submitAdd(m *model.Model) tea.Cmd {
 		m.AddInputs[0].SetValue(u)
 	}
 	title := strings.TrimSpace(m.AddInputs[1].Value())
-	text := strings.TrimSpace(m.AddInputs[2].Value())
+	text := strings.TrimSpace(m.AddText.Value())
 	m.AddStatus = "Adding..."
 	return m.AddPageCmd(u, title, text)
 }

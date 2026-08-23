@@ -13,6 +13,8 @@ import (
 )
 
 func HistoryTab(m *model.Model) string {
+	m.WorkspaceTargets = nil
+	m.WorkspaceSelectionY = 0
 	if m.HistoryLoading {
 		return m.Styles.Gray.Render("  " + m.Spinner.View() + " loading…")
 	}
@@ -39,91 +41,96 @@ func HistoryTab(m *model.Model) string {
 			row = m.Styles.Title.Render(title) + queryPart
 			row = m.Styles.Item.Render(row + "\n" + renderURL(m.Styles, h.URL, "", contentW))
 		}
+		y := lipgloss.Height(strings.Join(lines, "\n\n")) + 1
+		m.WorkspaceTargets = append(m.WorkspaceTargets, model.WorkspaceTarget{
+			Y: y, Height: lipgloss.Height(row), Kind: model.WorkspaceHistoryItem, Index: i,
+		})
+		if i == m.HistoryIdx {
+			m.WorkspaceSelectionY = y
+		}
 		lines = append(lines, row)
 	}
 	return strings.Join(lines, "\n\n")
 }
 
 func RulesTab(m *model.Model) string {
+	m.WorkspaceTargets = nil
+	m.WorkspaceSelectionY = 0
 	if m.RulesLoading {
 		return m.Styles.Gray.Render("  " + m.Spinner.View() + " loading…")
 	}
-	var lines []string
-	lines = append(lines, "")
-
-	aliasKeys := m.SortedAliasKeys()
-
-	type sectionDef struct {
-		header   string
-		items    []string
-		inputIdx int // RulesFormFocus value for this section's input
-		section  int // section number (0/1/2)
+	lines := []string{""}
+	aliasItems := make([]string, 0, len(m.RulesData.Aliases))
+	for _, key := range m.SortedAliasKeys() {
+		aliasItems = append(aliasItems, key+" → "+m.RulesData.Aliases[key])
 	}
-
-	// Build alias display items
-	var aliasItems []string
-	for _, k := range aliasKeys {
-		aliasItems = append(aliasItems, k+" → "+m.RulesData.Aliases[k])
-	}
-
-	sections := []sectionDef{
-		{"Skip Patterns", m.RulesData.Skip, 0, 0},
-		{"Priority Patterns", m.RulesData.Priority, 1, 1},
-		{"Aliases", aliasItems, 2, 2},
-	}
-
-	for _, sec := range sections {
-		// Section header
+	for _, section := range model.RulesSections {
+		items := aliasItems
+		if patterns := m.RulesPatterns(section.ID); patterns != nil {
+			items = *patterns
+		}
 		headerStyle := m.Styles.Title
-		if sec.section == m.RulesSection && m.RulesFormFocus == model.RulesFieldList {
+		if section.ID == m.RulesSection && m.RulesFormFocus == model.RulesFocusList {
 			headerStyle = m.Styles.SelTitle
 		}
-		lines = append(lines, headerStyle.Render("  "+sec.header))
+		lines = append(lines, headerStyle.Render("  "+section.Title))
 
-		// Form input(s) for this section
-		if sec.section == 2 {
-			// Alias: two inputs side by side
+		var form string
+		if section.Aliases {
 			kwStyle := m.Styles.Gray
 			valStyle := m.Styles.Gray
-			if m.RulesFormFocus == model.RulesFieldAliasKey {
+			if m.RulesSection == section.ID && m.RulesFormFocus == model.RulesFocusAliasKey {
 				kwStyle = m.Styles.SelTitle
 			}
-			if m.RulesFormFocus == model.RulesFieldAliasVal {
+			if m.RulesSection == section.ID && m.RulesFormFocus == model.RulesFocusAliasValue {
 				valStyle = m.Styles.SelTitle
 			}
 			btnLabel := " + Add "
-			if m.RulesEditingIdx >= 0 && m.RulesEditingSection == 2 {
+			if m.RulesEditingIdx >= 0 && m.RulesEditingSection == section.ID {
 				btnLabel = " Save "
 			}
-			lines = append(lines, "  "+kwStyle.Render("Keyword:")+" "+m.RulesAliasKeyInput.View()+"  "+valStyle.Render("Value:")+" "+m.RulesAliasValInput.View()+"  "+m.Styles.CancelBtn.Render(btnLabel))
+			form = "  " + kwStyle.Render("Keyword:") + " " + m.RulesAliasKeyInput.View() + "  " + valStyle.Render("Value:") + " " + m.RulesAliasValInput.View() + "  " + m.Styles.CancelBtn.Render(btnLabel)
 		} else {
 			inputStyle := m.Styles.Gray
-			if m.RulesFormFocus == sec.inputIdx {
+			if m.RulesSection == section.ID && m.RulesFormFocus == model.RulesFocusPattern {
 				inputStyle = m.Styles.SelTitle
 			}
-			var inp string
-			if sec.inputIdx == 0 {
-				inp = m.RulesSkipInput.View()
-			} else {
-				inp = m.RulesPriorityInput.View()
-			}
 			btnLabel := " + Add "
-			if m.RulesEditingIdx >= 0 && m.RulesEditingSection == sec.section {
+			if m.RulesEditingIdx >= 0 && m.RulesEditingSection == section.ID {
 				btnLabel = " Save "
 			}
-			lines = append(lines, "  "+inputStyle.Render("Pattern:")+" "+inp+"  "+m.Styles.CancelBtn.Render(btnLabel))
+			form = "  " + inputStyle.Render("Pattern:") + " " + m.RulesPatternInputs[section.ID].View() + "  " + m.Styles.CancelBtn.Render(btnLabel)
 		}
+		formY := lipgloss.Height(strings.Join(lines, "\n"))
+		m.WorkspaceTargets = append(m.WorkspaceTargets, model.WorkspaceTarget{
+			Y: formY, Height: lipgloss.Height(form), Kind: model.WorkspaceRulesForm, Section: section.ID,
+		})
+		if section.ID == m.RulesSection && m.RulesFormFocus != model.RulesFocusList {
+			m.WorkspaceSelectionY = formY
+		}
+		lines = append(lines, form)
 
-		// List items
-		if len(sec.items) == 0 {
+		if len(items) == 0 {
+			if section.ID == m.RulesSection && m.RulesFormFocus == model.RulesFocusList {
+				m.WorkspaceSelectionY = formY
+			}
 			lines = append(lines, m.Styles.Gray.Render("    (none)"))
 		}
-		for i, item := range sec.items {
-			if sec.section == m.RulesSection && i == m.RulesIdx && m.RulesFormFocus == model.RulesFieldList {
-				lines = append(lines, m.Styles.SelectedItem.Render("  ▸ "+item))
+		for i, item := range items {
+			var row string
+			if section.ID == m.RulesSection && i == m.RulesIdx && m.RulesFormFocus == model.RulesFocusList {
+				row = m.Styles.SelectedItem.Render("  ▸ " + item)
 			} else {
-				lines = append(lines, m.Styles.Item.Render("    "+item))
+				row = m.Styles.Item.Render("    " + item)
 			}
+			y := lipgloss.Height(strings.Join(lines, "\n"))
+			m.WorkspaceTargets = append(m.WorkspaceTargets, model.WorkspaceTarget{
+				Y: y, Height: lipgloss.Height(row), Kind: model.WorkspaceRulesItem, Section: section.ID, Index: i,
+			})
+			if section.ID == m.RulesSection && i == m.RulesIdx && m.RulesFormFocus == model.RulesFocusList {
+				m.WorkspaceSelectionY = y
+			}
+			lines = append(lines, row)
 		}
 		lines = append(lines, "")
 	}
@@ -131,25 +138,54 @@ func RulesTab(m *model.Model) string {
 }
 
 func AddTab(m *model.Model) string {
-	var lines []string
-	lines = append(lines, "")
-	lines = append(lines, m.Styles.Title.Render("  Add Document"))
-	lines = append(lines, "")
-	labels := []string{"URL", "Title", "Text"}
-	for i, label := range labels {
+	m.WorkspaceTargets = nil
+	m.WorkspaceSelectionY = 0
+	lines := []string{"", m.Styles.Title.Render("  Add Document"), ""}
+	for i, label := range []string{"URL", "Title"} {
 		style := m.Styles.Gray
 		if i == m.AddFocusIdx {
 			style = m.Styles.SelTitle
 		}
-		lines = append(lines, "  "+style.Render(label+":"))
-		lines = append(lines, "    "+m.AddInputs[i].View())
+		y := lipgloss.Height(strings.Join(lines, "\n"))
+		labelView := "  " + style.Render(label+":")
+		inputView := "    " + m.AddInputs[i].View()
+		m.WorkspaceTargets = append(m.WorkspaceTargets, model.WorkspaceTarget{
+			Y: y, Height: lipgloss.Height(labelView) + lipgloss.Height(inputView), Kind: model.WorkspaceAddField, Index: i,
+		})
+		if i == m.AddFocusIdx {
+			m.WorkspaceSelectionY = y
+		}
+		lines = append(lines, labelView, inputView)
 		lines = append(lines, "")
 	}
+	textStyle := m.Styles.Gray
+	if m.AddFocusIdx == 2 {
+		textStyle = m.Styles.SelTitle
+	}
+	textY := lipgloss.Height(strings.Join(lines, "\n"))
+	textLabel := "  " + textStyle.Render("Text:")
+	textInput := "    " + m.AddText.View()
+	m.WorkspaceTargets = append(m.WorkspaceTargets, model.WorkspaceTarget{
+		Y: textY, Height: lipgloss.Height(textLabel) + lipgloss.Height(textInput), Kind: model.WorkspaceAddField, Index: 2,
+	})
+	if m.AddFocusIdx == 2 {
+		m.WorkspaceSelectionY = textY
+	}
+	lines = append(lines, textLabel, textInput)
+	lines = append(lines, "")
 	submitStyle := m.Styles.CancelBtn
 	if m.AddFocusIdx == 3 {
 		submitStyle = m.Styles.CancelBtnSel
 	}
-	lines = append(lines, "  "+submitStyle.Render(" Submit "))
+	submitY := lipgloss.Height(strings.Join(lines, "\n"))
+	submit := "  " + submitStyle.Render(" Submit ")
+	m.WorkspaceTargets = append(m.WorkspaceTargets, model.WorkspaceTarget{
+		Y: submitY, Height: lipgloss.Height(submit), Kind: model.WorkspaceAddSubmit, Index: model.AddSubmitFieldIdx,
+	})
+	if m.AddFocusIdx == model.AddSubmitFieldIdx {
+		m.WorkspaceSelectionY = submitY
+	}
+	lines = append(lines, submit)
 	if m.AddStatus != "" {
 		lines = append(lines, "")
 		lines = append(lines, "  "+m.Styles.Conn.Render(m.AddStatus))

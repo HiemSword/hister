@@ -31,13 +31,13 @@ const (
 	themeListGap         = 1 // blank line between dark and light lists
 )
 
-func (h *Handler) overlay(m *model.Model, msg tea.MouseMsg) tea.Cmd {
-	if m.IsDragging && msg.Action == tea.MouseActionMotion {
+func (h *Handler) overlay(m *model.Model, msg Event) tea.Cmd {
+	if m.IsDragging && msg.Action == actionMotion {
 		m.OverlayOffX = min(m.Width/2, max(-m.Width/2, m.DragOffX0+(msg.X-m.DragStartX)))
 		m.OverlayOffY = min(m.Height/2, max(-m.Height/2, m.DragOffY0+(msg.Y-m.DragStartY)))
 		return nil
 	}
-	if m.IsDragging && msg.Action == tea.MouseActionRelease {
+	if m.IsDragging && msg.Action == actionRelease {
 		m.IsDragging = false
 		return nil
 	}
@@ -53,7 +53,7 @@ func (h *Handler) overlay(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-func (h *Handler) overlayClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func (h *Handler) overlayClick(m *model.Model, msg Event) tea.Cmd {
 	ox, oy, ow, oh := render.OverlayBounds(m)
 
 	titleBar := Region{ox, oy, ow, 1}
@@ -86,7 +86,7 @@ func (h *Handler) overlayClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 
 // --- overlay click handlers ---
 
-func (h *Handler) overlayContextMenu(m *model.Model, msg tea.MouseMsg, oy int) tea.Cmd {
+func (h *Handler) overlayContextMenu(m *model.Model, msg Event, oy int) tea.Cmd {
 	relY := msg.Y - oy
 	optStartY := model.OverlayBorderRows + model.OverlayPaddingRows
 	optIdx := relY - optStartY
@@ -97,7 +97,7 @@ func (h *Handler) overlayContextMenu(m *model.Model, msg tea.MouseMsg, oy int) t
 	return nil
 }
 
-func overlayDialog(m *model.Model, msg tea.MouseMsg, ox, oy, ow int) tea.Cmd {
+func overlayDialog(m *model.Model, msg Event, ox, oy, ow int) tea.Cmd {
 	if msg.Y-oy != model.DialogBtnRowY() {
 		return nil
 	}
@@ -111,7 +111,7 @@ func overlayDialog(m *model.Model, msg tea.MouseMsg, ox, oy, ow int) tea.Cmd {
 	return cmd
 }
 
-func overlayPrioritize(m *model.Model, msg tea.MouseMsg, ox, oy, ow int) tea.Cmd {
+func overlayPrioritize(m *model.Model, msg Event, ox, oy, ow int) tea.Cmd {
 	if msg.Y-oy != model.PrioritizeBtnRowY() {
 		return nil
 	}
@@ -120,8 +120,7 @@ func overlayPrioritize(m *model.Model, msg tea.MouseMsg, ox, oy, ow int) tea.Cmd
 	if msg.X-ox >= ow/2 {
 		m.PrioritizeBtnIdx = 1
 		if pattern := strings.TrimSpace(m.PrioritizeInput.Value()); pattern != "" {
-			m.RulesData.Priority = append(m.RulesData.Priority, pattern)
-			return m.SaveRulesCmd()
+			return m.PrioritizeRuleCmd(pattern)
 		}
 	}
 	return nil
@@ -129,7 +128,7 @@ func overlayPrioritize(m *model.Model, msg tea.MouseMsg, ox, oy, ow int) tea.Cmd
 
 // --- theme picker / settings internals ---
 
-func themePickerInside(m *model.Model, msg tea.MouseMsg, ox, oy int) tea.Cmd {
+func themePickerInside(m *model.Model, msg Event, ox, oy int) tea.Cmd {
 	relY := msg.Y - oy
 
 	if relY == themeModeRowY {
@@ -152,22 +151,23 @@ func themePickerInside(m *model.Model, msg tea.MouseMsg, ox, oy int) tea.Cmd {
 		darkNames, lightNames := theme.ClassifyThemes()
 		darkHeaderY := themeModeRowY + themeSectionOffset
 		darkListStartY := darkHeaderY + 1
-		lightHeaderY := darkListStartY + len(darkNames) + themeListGap
+		lightHeaderY := darkListStartY + m.ThemeDarkCount + themeListGap
 		lightListStartY := lightHeaderY + 1
 
 		type themeList struct {
 			items   Region
 			names   []string
+			start   int
 			section int
 			idx     *int
 		}
 		lists := [...]themeList{
-			{Region{Y: darkListStartY, H: len(darkNames)}, darkNames, 0, &m.DarkThemeIdx},
-			{Region{Y: lightListStartY, H: len(lightNames)}, lightNames, 1, &m.LightThemeIdx},
+			{Region{Y: darkListStartY, H: m.ThemeDarkCount}, darkNames, m.ThemeDarkStart, 0, &m.DarkThemeIdx},
+			{Region{Y: lightListStartY, H: m.ThemeLightCount}, lightNames, m.ThemeLightStart, 1, &m.LightThemeIdx},
 		}
 		for _, l := range lists {
 			if l.items.ContainsY(relY) {
-				idx := relY - l.items.Y
+				idx := l.start + relY - l.items.Y
 				m.ThemePickerSection = l.section
 				*l.idx = idx
 				if p, ok := theme.GetPalette(l.names[idx]); ok {
@@ -181,7 +181,7 @@ func themePickerInside(m *model.Model, msg tea.MouseMsg, ox, oy int) tea.Cmd {
 	return nil
 }
 
-func (h *Handler) themePickerScroll(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func (h *Handler) themePickerScroll(m *model.Model, msg Event) tea.Cmd {
 	darkNames, lightNames := theme.ClassifyThemes()
 	if m.ThemePickerSection == 0 {
 		handleScroll(msg, &m.DarkThemeIdx, 0, len(darkNames)-1, func() { h.PreviewTheme(m) })
@@ -191,7 +191,7 @@ func (h *Handler) themePickerScroll(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-func settingsScroll(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func settingsScroll(m *model.Model, msg Event) tea.Cmd {
 	handleScroll(msg, &m.SettingsIdx, 0, len(m.Cfg.Hotkeys.TUI)-1, nil)
 	return nil
 }

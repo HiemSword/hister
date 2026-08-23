@@ -241,7 +241,11 @@ func ContextMenuKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 
 func executeContextMenuAction(m *model.Model) tea.Cmd {
 	m.State = m.PrevState
-	switch m.MenuSelIdx {
+	option, ok := model.MenuOptionAt(m.MenuSelIdx)
+	if !ok {
+		return nil
+	}
+	switch option.ID {
 	case model.MenuOpen:
 		if u := m.GetSelectedURL(); u != "" {
 			if err := browser.OpenURL(u); err != nil {
@@ -252,10 +256,7 @@ func executeContextMenuAction(m *model.Model) tea.Cmd {
 	case model.MenuDelete:
 		if u := m.GetSelectedURL(); u != "" {
 			m.OpenDeleteDialog("Delete Result", u, -1, func() tea.Cmd {
-				return tea.Batch(
-					m.DeleteURLCmd(u),
-					doSearch(m),
-				)
+				return m.DeleteURLCmd(u)
 			})
 		}
 	case model.MenuPrioritize:

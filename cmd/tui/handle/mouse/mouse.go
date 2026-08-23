@@ -30,9 +30,41 @@ type Handler struct{ Deps }
 
 func New(d Deps) *Handler { return &Handler{d} }
 
+type action uint8
+
+const (
+	actionClick action = iota
+	actionRelease
+	actionMotion
+	actionWheel
+)
+
+// Event normalizes mouse messages for the layout hit testing shared by tabs,
+// overlays, and the results viewport.
+type Event struct {
+	X, Y   int
+	Button tea.MouseButton
+	Action action
+}
+
+func newEvent(msg tea.MouseMsg) Event {
+	e := Event{X: msg.X, Y: msg.Y, Button: msg.Button}
+	switch {
+	case msg.Action == tea.MouseActionRelease:
+		e.Action = actionRelease
+	case msg.Action == tea.MouseActionMotion:
+		e.Action = actionMotion
+	case tea.MouseEvent(msg).IsWheel():
+		e.Action = actionWheel
+	default:
+		e.Action = actionClick
+	}
+	return e
+}
+
 type Region struct{ X, Y, W, H int }
 
-func (r Region) Contains(msg tea.MouseMsg) bool {
+func (r Region) Contains(msg Event) bool {
 	return msg.X >= r.X && msg.X < r.X+r.W && msg.Y >= r.Y && msg.Y < r.Y+r.H
 }
 
@@ -67,7 +99,7 @@ func scrollToPercent(m *model.Model, mouseY int) {
 	render.RefreshViewport(m)
 }
 
-func wheelDelta(msg tea.MouseMsg) int {
+func wheelDelta(msg Event) int {
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
 		return -1
@@ -78,8 +110,8 @@ func wheelDelta(msg tea.MouseMsg) int {
 	}
 }
 
-func isLeftClick(msg tea.MouseMsg) bool {
-	return msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft
+func isLeftClick(msg Event) bool {
+	return msg.Action == actionClick && msg.Button == tea.MouseButtonLeft
 }
 
 func isOverlayState(s model.ViewState) bool {
@@ -95,7 +127,7 @@ func isOverlayState(s model.ViewState) bool {
 // handleScroll applies a wheel event to idx (clamped to [lo, hi]) and calls
 // after when the index changes. Returns (nil, true) if a wheel event was
 // consumed, (nil, false) otherwise.
-func handleScroll(msg tea.MouseMsg, idx *int, lo, hi int, after func()) (tea.Cmd, bool) {
+func handleScroll(msg Event, idx *int, lo, hi int, after func()) (tea.Cmd, bool) {
 	delta := wheelDelta(msg)
 	if delta == 0 {
 		return nil, false
@@ -117,7 +149,7 @@ func (h *Handler) closeOverlayForState(m *model.Model) tea.Cmd {
 	return h.CloseOverlay(m)
 }
 
-func (h *Handler) hintRegions(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func (h *Handler) hintRegions(m *model.Model, msg Event) tea.Cmd {
 	regions := render.ComputeHintRegions(m)
 	for _, r := range regions {
 		if msg.X >= r.X0 && msg.X < r.X1 {
@@ -129,57 +161,57 @@ func (h *Handler) hintRegions(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 
 // Handle is the main entry point for mouse events.
 func (h *Handler) Handle(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+	event := newEvent(msg)
 	if m.ScrollbarDragging {
-		if msg.Action == tea.MouseActionMotion {
-			scrollToPercent(m, msg.Y)
+		if event.Action == actionMotion {
+			scrollToPercent(m, event.Y)
 			return nil
 		}
-		if msg.Action == tea.MouseActionRelease {
+		if event.Action == actionRelease {
 			m.ScrollbarDragging = false
 			return nil
 		}
 	}
 
 	if isOverlayState(m.State) {
-		return h.overlay(m, msg)
+		return h.overlay(m, event)
 	}
-
 	if m.ActiveTab != model.TabSearch {
-		return h.nonSearchTab(m, msg)
+		return h.nonSearchTab(m, event)
 	}
 
-	if cmd, ok := handleScroll(msg, &m.SelectedIdx, 0, m.GetTotalResults()-1, func() {
+	if cmd, ok := handleScroll(event, &m.SelectedIdx, 0, m.GetTotalResults()-1, func() {
 		render.RefreshAndScroll(m)
 	}); ok {
 		return cmd
 	}
 
-	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonRight {
-		return rightClick(m, msg)
+	if event.Action == actionClick && event.Button == tea.MouseButtonRight {
+		return rightClick(m, event)
 	}
 
-	if !isLeftClick(msg) {
+	if !isLeftClick(event) {
 		return nil
 	}
 
-	if msg.Y == model.RowTabBar {
-		return h.tabBar(m, msg)
+	if event.Y == model.RowTabBar {
+		return h.tabBar(m, event)
 	}
-	if msg.Y == model.RowInput {
-		return inputRow(m, msg)
+	if event.Y == model.RowInput {
+		return inputRow(m, event)
 	}
-	if msg.Y == model.RowHints(m.Height) {
-		return h.hintRegions(m, msg)
+	if event.Y == model.RowHints(m.Height) {
+		return h.hintRegions(m, event)
 	}
-	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 && msg.X >= m.Width-model.ScrollbarWidth {
-		return scrollbarClick(m, msg)
+	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 && event.X >= m.Width-model.ScrollbarWidth {
+		return scrollbarClick(m, event)
 	}
-	return h.viewportClick(m, msg)
+	return h.viewportClick(m, event)
 }
 
 // --- search-tab handlers ---
 
-func rightClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func rightClick(m *model.Model, msg Event) tea.Cmd {
 	vp := vpRegion(m)
 	if !vp.ContainsY(msg.Y) || len(m.LineOffsets) == 0 {
 		return nil
@@ -196,7 +228,7 @@ func rightClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-func inputRow(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func inputRow(m *model.Model, msg Event) tea.Cmd {
 	m.State = model.StateInput
 	prefixW := model.InputLeadingPad + lipgloss.Width("❯") + model.InputTrailingPad
 	pos := min(max(msg.X-prefixW, 0), len([]rune(m.TextInput.Value())))
@@ -204,7 +236,7 @@ func inputRow(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	return m.TextInput.Focus()
 }
 
-func scrollbarClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func scrollbarClick(m *model.Model, msg Event) tea.Cmd {
 	vp := vpRegion(m)
 	if vp.ContainsY(msg.Y) {
 		m.ScrollbarDragging = true
@@ -213,7 +245,7 @@ func scrollbarClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-func (h *Handler) viewportClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
+func (h *Handler) viewportClick(m *model.Model, msg Event) tea.Cmd {
 	vp := vpRegion(m)
 	if !vp.ContainsY(msg.Y) || len(m.LineOffsets) == 0 {
 		return nil
@@ -254,14 +286,11 @@ func (h *Handler) viewportClick(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 
 // --- shared ---
 
-func (h *Handler) tabBar(m *model.Model, msg tea.MouseMsg) tea.Cmd {
-	x := model.TabBarLeftPad
-	for _, tab := range model.Tabs {
-		labelW := len(tab.Name) + model.TabLabelPad
-		if msg.X >= x && msg.X < x+labelW {
-			return h.SwitchTab(m, tab.Action)
+func (h *Handler) tabBar(m *model.Model, msg Event) tea.Cmd {
+	for _, target := range m.TabTargets {
+		if msg.X >= target.X0 && msg.X < target.X1 {
+			return h.SwitchTab(m, target.Action)
 		}
-		x += labelW + model.TabGap
 	}
 	return nil
 }

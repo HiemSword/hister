@@ -51,10 +51,18 @@ type (
 	ReconnectMsg        struct{}
 	HintClearMsg        struct{}
 	SettingsErrClearMsg struct{}
-	HistoryFetchedMsg   struct{ Items []HistoryItem }
-	RulesFetchedMsg     struct{ Data RulesResponse }
-	AddResultMsg        struct{ Err error }
-	RulesSavedMsg       struct{ Err error }
+	NoticeClearMsg      struct{ ID uint64 }
+	HistoryFetchedMsg   struct {
+		Items []HistoryItem
+		Err   error
+	}
+	RulesFetchedMsg struct {
+		Data RulesResponse
+		Err  error
+	}
+	AddResultMsg    struct{ Err error }
+	RulesSavedMsg   struct{ Err error }
+	DeleteResultMsg struct{ Err error }
 )
 
 type HistoryItem = client.HistoryItem
@@ -64,6 +72,26 @@ type RulesResponse = client.RulesResponse
 type HintRegion struct {
 	X0, X1 int
 	Action config.Action
+}
+
+type WorkspaceTargetKind uint8
+
+const (
+	WorkspaceHistoryItem WorkspaceTargetKind = iota
+	WorkspaceRulesForm
+	WorkspaceRulesItem
+	WorkspaceAddField
+	WorkspaceAddSubmit
+)
+
+// WorkspaceTarget describes one interactive block in a scrollable tab. Mouse
+// hit testing consumes the same geometry the renderer produced, so layout
+// changes do not require a second set of magic coordinates.
+type WorkspaceTarget struct {
+	Y, Height int
+	Kind      WorkspaceTargetKind
+	Section   int
+	Index     int
 }
 
 // holds one key → action row for the settings panel
@@ -79,14 +107,9 @@ const (
 	TabAdd     = 3
 )
 
-const (
-	RulesFieldSkip     = 0
-	RulesFieldPriority = 1
-	RulesFieldAliasKey = 2
-	RulesFieldAliasVal = 3
-	RulesFieldList     = 4
-)
-
+// TabDefinition is the single source of truth for tab identity, presentation,
+// and navigation. Renderers and handlers consume the same ordered slice so a
+// tab cannot acquire mismatched labels, hit targets, or shortcuts.
 type TabDefinition struct {
 	ID     int
 	Name   string
@@ -109,6 +132,34 @@ func TabForAction(action config.Action) (int, bool) {
 	return 0, false
 }
 
+const (
+	RulesSectionSkip = iota
+	RulesSectionPriority
+	RulesSectionVersioning
+	RulesSectionAliases
+)
+
+type RulesSectionDefinition struct {
+	ID          int
+	Title       string
+	Placeholder string
+	Aliases     bool
+}
+
+var RulesSections = []RulesSectionDefinition{
+	{ID: RulesSectionSkip, Title: "Skip Patterns", Placeholder: "skip pattern..."},
+	{ID: RulesSectionPriority, Title: "Priority Patterns", Placeholder: "priority pattern..."},
+	{ID: RulesSectionVersioning, Title: "Versioning Patterns", Placeholder: "versioning pattern..."},
+	{ID: RulesSectionAliases, Title: "Aliases", Aliases: true},
+}
+
+const (
+	RulesFocusPattern = iota
+	RulesFocusAliasKey
+	RulesFocusAliasValue
+	RulesFocusList
+)
+
 // Layout constants shared across packages (mouse handlers, render, model init).
 const (
 	ResultsPageSize   = 10 // results per page
@@ -122,9 +173,10 @@ const (
 )
 
 const (
-	RowTabBar  = 0 // tab bar header
-	RowInput   = 2 // search input line
-	RowVPStart = 4 // first viewport row
+	RowTabBar         = 0 // tab bar header
+	RowInput          = 2 // search input line
+	RowVPStart        = 4 // first viewport row
+	RowWorkspaceStart = 2
 )
 
 // returns the hints row Y position for the given terminal height.
@@ -138,8 +190,8 @@ const FixedLayoutRows = 6
 
 const (
 	MenuOpen int = iota
-	MenuDelete
 	MenuPrioritize
+	MenuDelete
 )
 
 type MenuOptionDefinition struct {
@@ -149,8 +201,15 @@ type MenuOptionDefinition struct {
 
 var MenuOptions = []MenuOptionDefinition{
 	{ID: MenuOpen, Label: "Open"},
-	{ID: MenuDelete, Label: "Delete"},
 	{ID: MenuPrioritize, Label: "Prioritize"},
+	{ID: MenuDelete, Label: "Delete"},
+}
+
+func MenuOptionAt(index int) (MenuOptionDefinition, bool) {
+	if index < 0 || index >= len(MenuOptions) {
+		return MenuOptionDefinition{}, false
+	}
+	return MenuOptions[index], true
 }
 
 // Dialog/overlay layout: border(1) + padding(1) + content rows
@@ -167,16 +226,7 @@ func DialogBtnRowY() int { return 7 }
 // Layout: border(1) + padding(1) + title(1) + blank(1) + label(1) + input(1) + blank(1) + buttons(1)
 func PrioritizeBtnRowY() int { return 7 }
 
-// Add tab row positions (relative to content area, after tab bar + dividers)
-const (
-	AddURLLabelY   = 5
-	AddURLInputY   = 6
-	AddTitleLabelY = 8
-	AddTitleInputY = 9
-	AddTextLabelY  = 11
-	AddTextInputY  = 12
-	AddSubmitY     = 14
-)
+const AddTextHeight = 5
 
 var SearchTips = []string{
 	"Type to search...",
@@ -199,5 +249,14 @@ func (m *Model) FlashHint(action config.Action) tea.Cmd {
 func ClearHintAfter() tea.Cmd {
 	return tea.Tick(350*time.Millisecond, func(_ time.Time) tea.Msg {
 		return HintClearMsg{}
+	})
+}
+
+func (m *Model) Notify(message string) tea.Cmd {
+	m.Notice = message
+	m.NoticeID++
+	id := m.NoticeID
+	return tea.Tick(2500*time.Millisecond, func(_ time.Time) tea.Msg {
+		return NoticeClearMsg{ID: id}
 	})
 }

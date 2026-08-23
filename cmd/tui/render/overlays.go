@@ -5,9 +5,9 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 
-	"github.com/asciimoo/hister/cmd/tui/component"
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
@@ -17,6 +17,13 @@ import (
 
 func ThemePicker(m *model.Model) string {
 	darkNames, lightNames := theme.ClassifyThemes()
+	listBudget := max(2, m.Height-12)
+	darkBudget := (listBudget + 1) / 2
+	lightBudget := listBudget - darkBudget
+	darkStart, darkEnd := windowRange(len(darkNames), m.DarkThemeIdx, darkBudget)
+	lightStart, lightEnd := windowRange(len(lightNames), m.LightThemeIdx, lightBudget)
+	m.ThemeDarkStart, m.ThemeDarkCount = darkStart, darkEnd-darkStart
+	m.ThemeLightStart, m.ThemeLightCount = lightStart, lightEnd-lightStart
 
 	maxNameW := 0
 	for _, name := range append(darkNames, lightNames...) {
@@ -36,9 +43,10 @@ func ThemePicker(m *model.Model) string {
 	}
 	modeRow := "Mode: " + strings.Join(modeParts, " ")
 
-	renderSection := func(names []string, cursorIdx int, configuredName string, focused bool) []string {
+	renderSection := func(names []string, start, end, cursorIdx int, configuredName string, focused bool) []string {
 		var slines []string
-		for i, name := range names {
+		for i, name := range names[start:end] {
+			absoluteIdx := start + i
 			marker := "  "
 			if name == configuredName {
 				marker = "● "
@@ -49,7 +57,7 @@ func ThemePicker(m *model.Model) string {
 				swatch = renderSwatch(p)
 			}
 			content := marker + paddedName + "  " + swatch
-			if focused && i == cursorIdx {
+			if focused && absoluteIdx == cursorIdx {
 				slines = append(slines, m.Styles.ThemePickerSelected.Render(content))
 			} else {
 				slines = append(slines, m.Styles.ThemePickerItem.Render(content))
@@ -66,8 +74,8 @@ func ThemePicker(m *model.Model) string {
 	if darkFocused {
 		headerStyle = m.Styles.SelTitle
 	}
-	lines = append(lines, headerStyle.Render("Dark Themes"))
-	lines = append(lines, renderSection(darkNames, m.DarkThemeIdx, m.Cfg.TUI.DarkTheme, darkFocused)...)
+	lines = append(lines, headerStyle.Render(rangeHeader("Dark Themes", darkStart, darkEnd, len(darkNames))))
+	lines = append(lines, renderSection(darkNames, darkStart, darkEnd, m.DarkThemeIdx, m.Cfg.TUI.DarkTheme, darkFocused)...)
 	lines = append(lines, "")
 
 	lightFocused := m.ThemePickerSection == 1
@@ -75,8 +83,8 @@ func ThemePicker(m *model.Model) string {
 	if lightFocused {
 		headerStyle = m.Styles.SelTitle
 	}
-	lines = append(lines, headerStyle.Render("Light Themes"))
-	lines = append(lines, renderSection(lightNames, m.LightThemeIdx, m.Cfg.TUI.LightTheme, lightFocused)...)
+	lines = append(lines, headerStyle.Render(rangeHeader("Light Themes", lightStart, lightEnd, len(lightNames))))
+	lines = append(lines, renderSection(lightNames, lightStart, lightEnd, m.LightThemeIdx, m.Cfg.TUI.LightTheme, lightFocused)...)
 
 	lines = append(lines, "")
 	nav := m.Keys.BestKey(config.ActionScrollDown)
@@ -91,11 +99,10 @@ func ThemePicker(m *model.Model) string {
 func ContextMenu(m *model.Model) string {
 	var lines []string
 	for i, option := range model.MenuOptions {
-		opt := option.Label
 		if i == m.MenuSelIdx {
-			lines = append(lines, m.Styles.ThemePickerSelected.Render("▸ "+opt))
+			lines = append(lines, m.Styles.ThemePickerSelected.Render("▸ "+option.Label))
 		} else {
-			lines = append(lines, m.Styles.ThemePickerItem.Render("  "+opt))
+			lines = append(lines, m.Styles.ThemePickerItem.Render("  "+option.Label))
 		}
 	}
 	return m.Styles.Dialog.Render(strings.Join(lines, "\n"))
@@ -105,10 +112,7 @@ func DeleteDialog(m *model.Model) string {
 	var lines []string
 	lines = append(lines, m.Styles.Title.Render(m.DialogMsg))
 	lines = append(lines, "")
-	urlDisplay := m.DialogURL
-	if len([]rune(urlDisplay)) > 35 {
-		urlDisplay = string([]rune(urlDisplay)[:34]) + "…"
-	}
+	urlDisplay := truncateLine(m.DialogURL, 35)
 	lines = append(lines, m.Styles.URL.Render(urlDisplay))
 	lines = append(lines, "")
 	cancelLabel := " Cancel "
@@ -132,26 +136,32 @@ func DeleteDialog(m *model.Model) string {
 
 func Settings(m *model.Model) string {
 	items := m.SortedSettingsItems()
+	errorRows := 0
+	if m.SettingsEditErr != "" {
+		errorRows = 2
+	}
+	start, end := windowRange(len(items), m.SettingsIdx, max(1, m.Height-8-errorRows))
 
 	maxKeyW := 0
 	for _, it := range items {
-		fk := component.FormatKey(it.Key)
+		fk := FormatKey(it.Key)
 		if len([]rune(fk)) > maxKeyW {
 			maxKeyW = len([]rune(fk))
 		}
 	}
 
 	var lines []string
-	lines = append(lines, m.Styles.Title.Render("Keybindings"))
+	lines = append(lines, m.Styles.Title.Render(rangeHeader("Keybindings", start, end, len(items))))
 	lines = append(lines, "")
-	for i, it := range items {
-		if i == m.SettingsIdx && m.SettingsEditMode {
+	for i, it := range items[start:end] {
+		absoluteIdx := start + i
+		if absoluteIdx == m.SettingsIdx && m.SettingsEditMode {
 			lines = append(lines, m.Styles.ThemePickerSelected.Render("  Press a key...  →  "+string(it.Action)))
 		} else {
-			fk := component.FormatKey(it.Key)
+			fk := FormatKey(it.Key)
 			padded := fk + strings.Repeat(" ", maxKeyW-len([]rune(fk)))
 			row := "  " + padded + "  →  " + string(it.Action)
-			if i == m.SettingsIdx {
+			if absoluteIdx == m.SettingsIdx {
 				lines = append(lines, m.Styles.ThemePickerSelected.Render(row))
 			} else {
 				lines = append(lines, m.Styles.ThemePickerItem.Render(row))
@@ -160,7 +170,7 @@ func Settings(m *model.Model) string {
 	}
 	if m.SettingsEditErr != "" {
 		lines = append(lines, "")
-		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(m.Styles.DialogBorder)).Render("  "+m.SettingsEditErr))
+		lines = append(lines, lipgloss.NewStyle().Foreground(m.Styles.DialogBorder).Render("  "+m.SettingsEditErr))
 	}
 	lines = append(lines, "")
 	if m.SettingsEditMode {
@@ -171,6 +181,22 @@ func Settings(m *model.Model) string {
 		lines = append(lines, m.Styles.Hint.Render(sNav+" navigate  "+sEdit+" edit  ⎋ close"))
 	}
 	return m.Styles.Help.Render(strings.Join(lines, "\n"))
+}
+
+func windowRange(length, cursor, budget int) (int, int) {
+	if length <= 0 || budget <= 0 {
+		return 0, 0
+	}
+	budget = min(length, budget)
+	start := max(0, min(cursor-budget/2, length-budget))
+	return start, start + budget
+}
+
+func rangeHeader(label string, start, end, total int) string {
+	if start == 0 && end == total {
+		return label
+	}
+	return fmt.Sprintf("%s (%d–%d/%d)", label, start+1, end, total)
 }
 
 func PrioritizeInput(m *model.Model) string {

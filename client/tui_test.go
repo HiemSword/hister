@@ -56,6 +56,25 @@ func TestSaveRulesIncludesVersioning(t *testing.T) {
 	}
 }
 
+func TestSaveRulesKeepsVersioningOptional(t *testing.T) {
+	var got url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		got = r.PostForm
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	if err := New(server.URL).SaveRules("skip", "priority"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Get("versioning") != "" {
+		t.Errorf("form[%q] = %q, want empty", "versioning", got.Get("versioning"))
+	}
+}
+
 func TestUpdateLabelPayload(t *testing.T) {
 	var got map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

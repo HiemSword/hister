@@ -16,7 +16,8 @@ import (
 )
 
 func Results(m *model.Model) string {
-	if m.Results == nil || (len(m.Results.Documents) == 0 && len(m.Results.History) == 0) {
+	documents := m.VisibleDocuments()
+	if m.Results == nil || (len(documents) == 0 && len(m.Results.History) == 0) {
 		m.LineOffsets, m.TotalLines = nil, 0
 		if m.IsSearching {
 			return m.Styles.Gray.Render("  " + m.Spinner.View() + " searching…")
@@ -47,14 +48,14 @@ func Results(m *model.Model) string {
 		histCount++
 	}
 
-	if histCount > 0 && len(m.Results.Documents) > 0 && currentIdx < m.Limit {
+	if histCount > 0 && len(documents) > 0 && currentIdx < m.Limit {
 		div := sectionDivider(m.Styles, w)
 		items = append(items, div)
 		currentLine += lipgloss.Height(div) + 1
 	}
 
 	lastDomain := ""
-	for _, d := range m.Results.Documents {
+	for _, d := range documents {
 		if currentIdx >= m.Limit {
 			break
 		}
@@ -87,10 +88,11 @@ func Results(m *model.Model) string {
 		currentLine += lipgloss.Height(closingDiv) + 1
 	}
 
-	totalItems := len(m.Results.History) + len(m.Results.Documents)
+	totalItems := len(m.Results.History) + len(documents)
 	if totalItems > m.Limit {
 		lineOffsets = append(lineOffsets, currentLine)
-		rem := max(0, int(m.Results.Total)+len(m.Results.History)-m.Limit)
+		totalAvailable := max(int(m.Results.Total)+len(m.Results.History), totalItems)
+		rem := max(0, totalAvailable-m.Limit)
 		var content string
 		if currentIdx == m.SelectedIdx {
 			content = m.Styles.LoadMoreSelected.Render(fmt.Sprintf("[ ▼ Load 10 more (%d remaining) ]", rem))
@@ -163,6 +165,12 @@ func Document(m *model.Model, d *document.Document, sel bool, contentW int) stri
 		domainBadge = m.Styles.DomainLabel.Render("["+shortDomain+"]") + " "
 		domainBadgeW = lipgloss.Width(domainBadge)
 	}
+	labelBadge := ""
+	labelBadgeW := 0
+	if d.Label != "" {
+		labelBadge = m.Styles.SuggTerm.Render("["+truncateLine(d.Label, 18)+"]") + " "
+		labelBadgeW = lipgloss.Width(labelBadge)
+	}
 
 	relTime := relativeTime(d.Updated)
 	timeRendered := m.Styles.Time.Render(relTime)
@@ -171,9 +179,9 @@ func Document(m *model.Model, d *document.Document, sel bool, contentW int) stri
 		timeW = lipgloss.Width(timeRendered) + 1
 	}
 
-	titleMaxW := max(1, contentW-timeW-domainBadgeW)
+	titleMaxW := max(1, contentW-timeW-domainBadgeW-labelBadgeW)
 	titleRendered := ts.Render(truncateLine(strings.Join(strings.Fields(d.Title), " "), titleMaxW))
-	titleLine := domainBadge + rightPad(titleRendered, contentW-timeW-domainBadgeW) +
+	titleLine := labelBadge + domainBadge + rightPad(titleRendered, contentW-timeW-domainBadgeW-labelBadgeW) +
 		strings.Repeat(" ", max(0, timeW-lipgloss.Width(timeRendered))) + timeRendered
 
 	var sb strings.Builder

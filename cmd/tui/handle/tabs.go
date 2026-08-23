@@ -24,7 +24,7 @@ func TabKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		case model.TabAdd:
 			inputFocused = m.AddFocusIdx >= 0 && m.AddFocusIdx < 3
 		case model.TabRules:
-			inputFocused = m.RulesFormFocus < model.RulesFieldList // form inputs 0-3
+			inputFocused = m.RulesFormFocus < model.RulesFocusList
 		}
 		if inputFocused {
 			action = ""
@@ -80,12 +80,10 @@ func HistoryKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 }
 
 func RulesKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
-	// If a form input is focused (0-3), handle text input
-	if m.RulesFormFocus < model.RulesFieldList {
+	if m.RulesFormFocus < model.RulesFocusList {
 		return rulesFormKeys(m, msg)
 	}
 
-	// List navigation (RulesFormFocus == 4)
 	action := m.Keys.Action(msg)
 	switch action {
 	case config.ActionScrollUp:
@@ -105,7 +103,7 @@ func RulesKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		n := m.RulesSectionLen(m.RulesSection)
 		if m.RulesIdx < n-1 {
 			m.RulesIdx++
-		} else if m.RulesSection < 2 {
+		} else if m.RulesSection < len(model.RulesSections)-1 {
 			m.RulesSection++
 			m.RulesIdx = 0
 		}
@@ -115,49 +113,36 @@ func RulesKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		if msg.String() == "esc" {
 			return SwitchTab(m, config.ActionTabSearch)
 		}
-		// Jump to the form input for the current section
-		switch m.RulesSection {
-		case 0:
-			m.RulesFormFocus = model.RulesFieldSkip
-			m.RulesSkipInput.Focus()
-		case 1:
-			m.RulesFormFocus = model.RulesFieldPriority
-			m.RulesPriorityInput.Focus()
-		case 2:
-			m.RulesFormFocus = model.RulesFieldAliasKey
+		if m.RulesSection == model.RulesSectionAliases {
+			m.RulesFormFocus = model.RulesFocusAliasKey
 			m.RulesAliasKeyInput.Focus()
+		} else {
+			m.RulesFormFocus = model.RulesFocusPattern
+			m.RulesPatternInputs[m.RulesSection].Focus()
 		}
 		m.RulesEditingIdx = -1
 		m.RulesEditingSection = m.RulesSection
 		return nil
 	case config.ActionOpenResult:
-		// Edit existing item: populate form input with existing value
 		if m.RulesSectionLen(m.RulesSection) > 0 {
 			m.RulesEditingIdx = m.RulesIdx
 			m.RulesEditingSection = m.RulesSection
-			switch m.RulesSection {
-			case 0:
-				if m.RulesIdx < len(m.RulesData.Skip) {
-					m.RulesSkipInput.SetValue(m.RulesData.Skip[m.RulesIdx])
-					m.RulesSkipInput.SetCursor(len([]rune(m.RulesSkipInput.Value())))
-					m.RulesSkipInput.Focus()
-					m.RulesFormFocus = model.RulesFieldSkip
+			if patterns := m.RulesPatterns(m.RulesSection); patterns != nil {
+				if m.RulesIdx < len(*patterns) {
+					input := &m.RulesPatternInputs[m.RulesSection]
+					input.SetValue((*patterns)[m.RulesIdx])
+					input.SetCursor(len([]rune(input.Value())))
+					input.Focus()
+					m.RulesFormFocus = model.RulesFocusPattern
 				}
-			case 1:
-				if m.RulesIdx < len(m.RulesData.Priority) {
-					m.RulesPriorityInput.SetValue(m.RulesData.Priority[m.RulesIdx])
-					m.RulesPriorityInput.SetCursor(len([]rune(m.RulesPriorityInput.Value())))
-					m.RulesPriorityInput.Focus()
-					m.RulesFormFocus = model.RulesFieldPriority
-				}
-			case 2:
+			} else {
 				keys := m.SortedAliasKeys()
 				if m.RulesIdx < len(keys) {
 					m.RulesAliasKeyInput.SetValue(keys[m.RulesIdx])
 					m.RulesAliasValInput.SetValue(m.RulesData.Aliases[keys[m.RulesIdx]])
 					m.RulesAliasKeyInput.SetCursor(len([]rune(m.RulesAliasKeyInput.Value())))
 					m.RulesAliasKeyInput.Focus()
-					m.RulesFormFocus = model.RulesFieldAliasKey
+					m.RulesFormFocus = model.RulesFocusAliasKey
 				}
 			}
 		}
@@ -167,16 +152,11 @@ func RulesKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 			section := m.RulesSection
 			idx := m.RulesIdx
 			var label string
-			switch section {
-			case 0:
-				if idx < len(m.RulesData.Skip) {
-					label = m.RulesData.Skip[idx]
+			if patterns := m.RulesPatterns(section); patterns != nil {
+				if idx < len(*patterns) {
+					label = (*patterns)[idx]
 				}
-			case 1:
-				if idx < len(m.RulesData.Priority) {
-					label = m.RulesData.Priority[idx]
-				}
-			case 2:
+			} else {
 				keys := m.SortedAliasKeys()
 				if idx < len(keys) {
 					label = keys[idx]
@@ -184,18 +164,12 @@ func RulesKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 			}
 			if label != "" {
 				m.OpenDeleteDialog("Delete Rule", label, model.TabRules, func() tea.Cmd {
-					switch section {
-					case 0:
-						if idx < len(m.RulesData.Skip) {
-							m.RulesData.Skip = append(m.RulesData.Skip[:idx], m.RulesData.Skip[idx+1:]...)
+					if patterns := m.RulesPatterns(section); patterns != nil {
+						if idx < len(*patterns) {
+							*patterns = append((*patterns)[:idx], (*patterns)[idx+1:]...)
 							return m.SaveRulesCmd()
 						}
-					case 1:
-						if idx < len(m.RulesData.Priority) {
-							m.RulesData.Priority = append(m.RulesData.Priority[:idx], m.RulesData.Priority[idx+1:]...)
-							return m.SaveRulesCmd()
-						}
-					case 2:
+					} else {
 						keys := m.SortedAliasKeys()
 						if idx < len(keys) {
 							return m.DeleteAliasCmd(keys[idx])
@@ -219,33 +193,24 @@ func rulesFormKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	case config.ActionOpenResult:
 		var cmd tea.Cmd
 		switch m.RulesFormFocus {
-		case model.RulesFieldSkip:
-			pattern := strings.TrimSpace(m.RulesSkipInput.Value())
+		case model.RulesFocusPattern:
+			input := &m.RulesPatternInputs[m.RulesSection]
+			pattern := strings.TrimSpace(input.Value())
+			patterns := m.RulesPatterns(m.RulesSection)
 			if pattern != "" {
-				if m.RulesEditingIdx >= 0 && m.RulesEditingSection == 0 && m.RulesEditingIdx < len(m.RulesData.Skip) {
-					m.RulesData.Skip[m.RulesEditingIdx] = pattern
+				if m.RulesEditingIdx >= 0 && m.RulesEditingSection == m.RulesSection && m.RulesEditingIdx < len(*patterns) {
+					(*patterns)[m.RulesEditingIdx] = pattern
 				} else {
-					m.RulesData.Skip = append(m.RulesData.Skip, pattern)
+					*patterns = append(*patterns, pattern)
 				}
 				cmd = m.SaveRulesCmd()
 			}
-			m.RulesSkipInput.SetValue("")
-		case model.RulesFieldPriority:
-			pattern := strings.TrimSpace(m.RulesPriorityInput.Value())
-			if pattern != "" {
-				if m.RulesEditingIdx >= 0 && m.RulesEditingSection == 1 && m.RulesEditingIdx < len(m.RulesData.Priority) {
-					m.RulesData.Priority[m.RulesEditingIdx] = pattern
-				} else {
-					m.RulesData.Priority = append(m.RulesData.Priority, pattern)
-				}
-				cmd = m.SaveRulesCmd()
-			}
-			m.RulesPriorityInput.SetValue("")
-		case model.RulesFieldAliasKey, model.RulesFieldAliasVal:
+			input.SetValue("")
+		case model.RulesFocusAliasKey, model.RulesFocusAliasValue:
 			keyword := strings.TrimSpace(m.RulesAliasKeyInput.Value())
 			value := strings.TrimSpace(m.RulesAliasValInput.Value())
 			if keyword != "" && value != "" {
-				if m.RulesEditingIdx >= 0 && m.RulesEditingSection == 2 {
+				if m.RulesEditingIdx >= 0 && m.RulesEditingSection == model.RulesSectionAliases {
 					keys := m.SortedAliasKeys()
 					if m.RulesEditingIdx < len(keys) {
 						oldKey := keys[m.RulesEditingIdx]
@@ -263,41 +228,33 @@ func rulesFormKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 			m.RulesAliasValInput.SetValue("")
 		}
 		m.BlurAllRulesInputs()
-		m.RulesFormFocus = model.RulesFieldList
+		m.RulesFormFocus = model.RulesFocusList
 		m.RulesEditingIdx = -1
 		return cmd
 
 	case config.ActionToggleFocus:
 		if msg.String() == "esc" {
-			// Cancel editing
 			m.BlurAllRulesInputs()
-			m.RulesFormFocus = model.RulesFieldList
+			m.RulesFormFocus = model.RulesFocusList
 			m.RulesEditingIdx = -1
-			// Clear the input that was being edited
-			m.RulesSkipInput.SetValue("")
-			m.RulesPriorityInput.SetValue("")
+			for i := range m.RulesPatternInputs {
+				m.RulesPatternInputs[i].SetValue("")
+			}
 			m.RulesAliasKeyInput.SetValue("")
 			m.RulesAliasValInput.SetValue("")
 			return nil
 		}
-		// Cycle through form inputs: skip → priority → alias key → alias val → list
 		m.BlurAllRulesInputs()
-		next := m.RulesFormFocus + 1
-		if next > model.RulesFieldList {
-			next = model.RulesFieldSkip
-		}
-		m.RulesFormFocus = next
-		switch next {
-		case model.RulesFieldSkip:
-			m.RulesSkipInput.Focus()
-		case model.RulesFieldPriority:
-			m.RulesPriorityInput.Focus()
-		case model.RulesFieldAliasKey:
-			m.RulesAliasKeyInput.Focus()
-		case model.RulesFieldAliasVal:
-			m.RulesAliasValInput.Focus()
-		case model.RulesFieldList:
-			// list mode, nothing to focus
+		if m.RulesSection == model.RulesSectionAliases {
+			switch m.RulesFormFocus {
+			case model.RulesFocusAliasKey:
+				m.RulesFormFocus = model.RulesFocusAliasValue
+				m.RulesAliasValInput.Focus()
+			default:
+				m.RulesFormFocus = model.RulesFocusList
+			}
+		} else {
+			m.RulesFormFocus = model.RulesFocusList
 		}
 		return nil
 	}
@@ -305,19 +262,24 @@ func rulesFormKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	// Pass key to the focused input
 	var cmd tea.Cmd
 	switch m.RulesFormFocus {
-	case model.RulesFieldSkip:
-		m.RulesSkipInput, cmd = m.RulesSkipInput.Update(msg)
-	case model.RulesFieldPriority:
-		m.RulesPriorityInput, cmd = m.RulesPriorityInput.Update(msg)
-	case model.RulesFieldAliasKey:
+	case model.RulesFocusPattern:
+		input := &m.RulesPatternInputs[m.RulesSection]
+		*input, cmd = input.Update(msg)
+	case model.RulesFocusAliasKey:
 		m.RulesAliasKeyInput, cmd = m.RulesAliasKeyInput.Update(msg)
-	case model.RulesFieldAliasVal:
+	case model.RulesFocusAliasValue:
 		m.RulesAliasValInput, cmd = m.RulesAliasValInput.Update(msg)
 	}
 	return cmd
 }
 
 func AddKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+	// Enter is content inside the multi-line field, not the global submit action.
+	if m.AddFocusIdx == 2 && msg.String() == "enter" {
+		var cmd tea.Cmd
+		m.AddText, cmd = m.AddText.Update(msg)
+		return cmd
+	}
 	action := m.Keys.Action(msg)
 	switch action {
 	case config.ActionToggleFocus:
@@ -326,28 +288,39 @@ func AddKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		}
 		if m.AddFocusIdx < len(m.AddInputs) {
 			m.AddInputs[m.AddFocusIdx].Blur()
+		} else if m.AddFocusIdx == 2 {
+			m.AddText.Blur()
 		}
 		m.AddFocusIdx = (m.AddFocusIdx + 1) % 4
-		if m.AddFocusIdx < 3 {
+		if m.AddFocusIdx < len(m.AddInputs) {
 			m.AddInputs[m.AddFocusIdx].Focus()
+		} else if m.AddFocusIdx == 2 {
+			m.AddText.Focus()
 		}
 		return m.FlashHint(config.ActionToggleFocus)
 	case config.ActionOpenResult:
-		if m.AddFocusIdx == 3 || m.AddFocusIdx == 2 {
+		if m.AddFocusIdx == 3 {
 			return submitAdd(m)
 		}
 		if m.AddFocusIdx < len(m.AddInputs) {
 			m.AddInputs[m.AddFocusIdx].Blur()
 		}
 		m.AddFocusIdx++
-		if m.AddFocusIdx < 3 {
+		if m.AddFocusIdx < len(m.AddInputs) {
 			m.AddInputs[m.AddFocusIdx].Focus()
+		} else if m.AddFocusIdx == 2 {
+			m.AddText.Focus()
 		}
 		return nil
 	}
-	if m.AddFocusIdx < 3 {
+	if m.AddFocusIdx < len(m.AddInputs) {
 		var cmd tea.Cmd
 		m.AddInputs[m.AddFocusIdx], cmd = m.AddInputs[m.AddFocusIdx].Update(msg)
+		return cmd
+	}
+	if m.AddFocusIdx == 2 {
+		var cmd tea.Cmd
+		m.AddText, cmd = m.AddText.Update(msg)
 		return cmd
 	}
 	return nil

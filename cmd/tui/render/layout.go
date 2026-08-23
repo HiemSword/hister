@@ -7,12 +7,10 @@ package render
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/asciimoo/hister/cmd/tui/component"
 	"github.com/asciimoo/hister/cmd/tui/model"
-	"github.com/asciimoo/hister/config"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -24,7 +22,7 @@ type overlayDef struct {
 }
 
 var overlayDefs = map[model.ViewState]overlayDef{
-	model.StateHelp:            {func(m *model.Model) string { return m.Styles.Help.Render(GenerateHelpText(m)) }, func(m *model.Model) lipgloss.Color { return m.Styles.HelpBorder }, nil},
+	model.StateHelp:            {HelpOverlay, func(m *model.Model) lipgloss.Color { return m.Styles.HelpBorder }, nil},
 	model.StateDialog:          {func(m *model.Model) string { return DeleteDialog(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.DialogBorder }, nil},
 	model.StateThemePicker:     {func(m *model.Model) string { return ThemePicker(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.ThemeBorder }, nil},
 	model.StateSettings:        {func(m *model.Model) string { return Settings(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.HelpBorder }, nil},
@@ -36,7 +34,7 @@ func View(m *model.Model) string {
 	if !m.Ready {
 		return "Loading..."
 	}
-	if m.Width < 20 || m.Height < 10 {
+	if m.Width < 20 || m.Height < 14 {
 		return "Terminal too small"
 	}
 
@@ -68,17 +66,15 @@ func MainView(m *model.Model) string {
 
 	if renderer, ok := tabRenderers[m.ActiveTab]; ok {
 		content := renderer(m)
-		contentH := m.Viewport.Height + 2
-		contentLines := strings.Split(content, "\n")
-		for len(contentLines) < contentH {
-			contentLines = append(contentLines, "")
+		m.Workspace.SetContent(content)
+		target := m.WorkspaceSelectionY
+		if target < m.Workspace.YOffset {
+			m.Workspace.SetYOffset(target)
+		} else if target >= m.Workspace.YOffset+m.Workspace.Height {
+			m.Workspace.SetYOffset(max(0, target-m.Workspace.Height+2))
 		}
-		if len(contentLines) > contentH {
-			contentLines = contentLines[:contentH]
-		}
-		content = strings.Join(contentLines, "\n")
 		hints := Hints(m)
-		return strings.Join([]string{header, div, content, div, hints}, "\n")
+		return strings.Join([]string{header, div, m.Workspace.View(), div, hints}, "\n")
 	}
 
 	pStyle := m.Styles.PromptActive
@@ -86,38 +82,87 @@ func MainView(m *model.Model) string {
 		pStyle = m.Styles.PromptBlur
 	}
 	inputLine := "  " + pStyle.Render("❯") + " " + m.TextInput.View()
-
-	vp := m.Viewport.View()
-	vpLines := strings.Split(vp, "\n")
-	if len(vpLines) > m.Viewport.Height {
-		vpLines = vpLines[:m.Viewport.Height]
-	}
-	for len(vpLines) < m.Viewport.Height {
-		vpLines = append(vpLines, "")
-	}
-	vp = strings.Join(vpLines, "\n")
-
-	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 {
-		vp = lipgloss.JoinHorizontal(lipgloss.Top, vp, " ", Scrollbar(m))
-	}
+	ResizeSearchViewports(m)
+	body := SearchBody(m)
 
 	hints := Hints(m)
 
-	return strings.Join([]string{header, div, inputLine, div, vp, div, hints}, "\n")
+	return strings.Join([]string{header, div, inputLine, div, body, div, hints}, "\n")
+}
+
+func ResizeSearchViewports(m *model.Model) {
+	w := max(1, m.Width-1)
+	bodyH := max(1, m.Height-model.FixedLayoutRows)
+	m.Viewport.Width = max(1, w-2)
+	m.Viewport.Height = bodyH
+}
+
+func SearchBody(m *model.Model) string {
+	w := max(1, m.Width-1)
+	bodyH := max(1, m.Height-model.FixedLayoutRows)
+	return resultsViewport(m, w, bodyH)
+}
+
+func resultsViewport(m *model.Model, width, height int) string {
+	content := normalizeBlock(m.Viewport.View(), max(1, m.Viewport.Width), height)
+	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 {
+		content = lipgloss.JoinHorizontal(lipgloss.Top, content, " ", Scrollbar(m))
+	}
+	return normalizeBlock(content, width, height)
+}
+
+func normalizeBlock(content string, width, height int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	for i, line := range lines {
+		line = truncateAnsi(line, width)
+		lines[i] = rightPad(line, width)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func Header(m *model.Model) string {
+	w := max(1, m.Width-1)
+	compact := w < 56
 	var tabs []string
-	for _, tab := range model.Tabs {
-		if tab.ID == m.ActiveTab {
-			tabs = append(tabs, m.Styles.TabActive.Render("["+tab.Name+"]"))
-		} else {
-			tabs = append(tabs, m.Styles.TabInactive.Render(" "+tab.Name+" "))
+	m.TabTargets = nil
+	x := model.TabBarLeftPad
+	for _, definition := range model.Tabs {
+		label := definition.Name
+		if compact {
+			label = definition.Name[:1]
 		}
+		var tab string
+		if definition.ID == m.ActiveTab {
+			tab = m.Styles.TabActive.Render("[" + label + "]")
+		} else {
+			tab = m.Styles.TabInactive.Render(" " + label + " ")
+		}
+		tabs = append(tabs, tab)
+		tabWidth := lipgloss.Width(tab)
+		m.TabTargets = append(m.TabTargets, model.HintRegion{
+			X0: x, X1: x + tabWidth, Action: definition.Action,
+		})
+		x += tabWidth + model.TabGap
 	}
 	tabBar := " " + strings.Join(tabs, " ")
+	appendMode := func(full, short string) {
+		label := full
+		if compact {
+			label = short
+		}
+		badge := "  " + m.Styles.Conn.Render(label)
+		if lipgloss.Width(tabBar)+lipgloss.Width(badge) < w {
+			tabBar += badge
+		}
+	}
 	if m.SortMode == "domain" {
-		tabBar += "  " + m.Styles.Conn.Render("[domain]")
+		appendMode("[domain]", "D")
 	}
 
 	cs := m.Styles.Disc.Render("● disconnected")
@@ -126,14 +171,17 @@ func Header(m *model.Model) string {
 	}
 
 	var right string
-	if m.ConnError != nil && !m.WsReady {
+	if m.Notice != "" {
+		right = m.Styles.Conn.Render("◆ " + m.Notice)
+	} else if m.ConnError != nil && !m.WsReady {
 		right = m.Styles.Disc.Render(m.ConnError.Error())
 	} else if m.IsSearching {
 		right = cs + "  " + m.Styles.Spin.Render(m.Spinner.View()+" searching…")
 	} else {
 		countStr := "0 results"
 		if m.Results != nil {
-			countStr = fmt.Sprintf("%d results", int(m.Results.Total))
+			visibleCount := len(m.Results.History) + len(m.VisibleDocuments())
+			countStr = fmt.Sprintf("%d results", max(int(m.Results.Total)+len(m.Results.History), visibleCount))
 			if m.Results.SearchDuration != "" {
 				countStr += "  " + m.Results.SearchDuration
 			}
@@ -141,116 +189,48 @@ func Header(m *model.Model) string {
 		right = cs + "  " + m.Styles.Status.Render(countStr)
 	}
 
-	w := max(1, m.Width-1)
 	leftW := lipgloss.Width(tabBar)
 	rightW := lipgloss.Width(right)
+	if available := max(0, w-leftW); rightW > available {
+		right = truncateAnsi(right, available)
+		rightW = lipgloss.Width(right)
+	}
 	pad := max(0, w-leftW-rightW)
 	return tabBar + strings.Repeat(" ", pad) + right
 }
 
-type hintEntry struct {
-	act config.Action // action name (or "" for fixed keys)
-	key string        // pre-resolved key symbol (for fixed entries)
-	lbl string
-}
-
-func hintEntries(m *model.Model) []hintEntry {
-	bestKey := func(action config.Action) string {
-		return m.Keys.BestKey(action)
-	}
+func keyContext(m *model.Model) component.KeyContext {
 	switch m.ActiveTab {
 	case model.TabHistory:
-		var entries []hintEntry
-		if bestKey(config.ActionScrollDown) != "" {
-			entries = append(entries, hintEntry{act: config.ActionScrollDown, lbl: "navigate"})
-		}
-		if bestKey(config.ActionOpenResult) != "" {
-			entries = append(entries, hintEntry{act: config.ActionOpenResult, lbl: "open"})
-		}
-		if bestKey(config.ActionDeleteResult) != "" {
-			entries = append(entries, hintEntry{act: config.ActionDeleteResult, lbl: "delete"})
-		}
-		return append(entries, hintEntry{key: "⎋", lbl: "back"})
+		return component.ContextHistory
 	case model.TabRules:
-		entries := []hintEntry{{key: "⇥", lbl: "next"}}
-		if bestKey(config.ActionOpenResult) != "" {
-			entries = append(entries, hintEntry{act: config.ActionOpenResult, lbl: "add/save"})
-		}
-		if bestKey(config.ActionScrollDown) != "" {
-			entries = append(entries, hintEntry{act: config.ActionScrollDown, lbl: "navigate"})
-		}
-		if bestKey(config.ActionDeleteResult) != "" {
-			entries = append(entries, hintEntry{act: config.ActionDeleteResult, lbl: "delete"})
-		}
-		return append(entries, hintEntry{key: "⎋", lbl: "back"})
+		return component.ContextRules
 	case model.TabAdd:
-		return []hintEntry{
-			{key: "⇥", lbl: "next"},
-			{key: "↵", lbl: "submit"},
-			{key: "⎋", lbl: "back"},
-		}
-	default: // Search
-		isNoColor := m.ThemeName == "no-color"
-		var entries []hintEntry
-		for _, a := range []struct {
-			act config.Action
-			lbl string
-		}{
-			{config.ActionScrollUp, "up"},
-			{config.ActionScrollDown, "down"},
-			{config.ActionOpenResult, "open"},
-			{config.ActionDeleteResult, "delete"},
-			{config.ActionToggleSort, "sort"},
-			{config.ActionToggleTheme, "theme"},
-			{config.ActionToggleSettings, "settings"},
-			{config.ActionToggleHelp, "help"},
-			{config.ActionQuit, "quit"},
-		} {
-			if isNoColor && a.act == config.ActionToggleTheme {
-				continue
-			}
-			if bestKey(a.act) != "" {
-				entries = append(entries, hintEntry{act: a.act, lbl: a.lbl})
-			}
-		}
-		return entries
+		return component.ContextAdd
+	default:
+		return component.ContextSearch
 	}
 }
 
 func Hints(m *model.Model) string {
-	entries := hintEntries(m)
-	isNoColor := m.ThemeName == "no-color"
-	sep := m.Styles.Hint.Render("  ·  ")
-	if isNoColor {
-		sep = "  |  "
+	h := m.Help
+	h.ShowAll = false
+	h.Width = max(1, m.Width-4)
+	if m.ThemeName == "no-color" {
+		h.ShortSeparator = " | "
+	} else {
+		h.ShortSeparator = " · "
 	}
-	var parts []string
-	for _, e := range entries {
-		k := e.key
-		if k == "" {
-			k = m.Keys.BestKey(e.act)
-		}
-		if k == "" {
-			continue
-		}
-		isFlash := e.act != "" && m.HintFlash == e.act
-		if isNoColor {
-			if isFlash {
-				parts = append(parts, "["+k+"] "+strings.ToUpper(e.lbl))
-			} else {
-				parts = append(parts, k+" "+e.lbl)
-			}
-		} else {
-			keyRender := m.Styles.HintKey
-			lblRender := m.Styles.Hint
-			if isFlash {
-				keyRender = m.Styles.HintKeyFlash
-				lblRender = m.Styles.HintFlash
-			}
-			parts = append(parts, keyRender.Render(k)+lblRender.Render(" "+e.lbl))
-		}
-	}
-	return "  " + strings.Join(parts, sep)
+	return "  " + h.View(m.Keys.For(keyContext(m)))
+}
+
+func HelpOverlay(m *model.Model) string {
+	h := m.Help
+	h.ShowAll = true
+	h.Width = max(20, overlayMaxWidth(m)-8)
+	content := m.Styles.HelpHeader.Render("Keyboard shortcuts") + "\n\n" +
+		h.View(m.Keys.For(keyContext(m)))
+	return m.Styles.Help.Render(content)
 }
 
 func overlayMaxWidth(m *model.Model) int {
@@ -293,7 +273,10 @@ func renderOverlayBox(content string, borderColor lipgloss.Color, maxWidth int) 
 	for _, l := range lines {
 		sb.WriteByte('\n')
 		pad := max(0, maxW-lipgloss.Width(l))
-		sb.WriteString(bc.Render("│") + l + strings.Repeat(" ", pad) + bc.Render("│"))
+		sb.WriteString(bc.Render("│"))
+		sb.WriteString(l)
+		sb.WriteString(strings.Repeat(" ", pad))
+		sb.WriteString(bc.Render("│"))
 	}
 	sb.WriteByte('\n')
 	sb.WriteString(bottomBar)
@@ -319,18 +302,9 @@ func renderOverlay(bg, fg string, bgW, bgH, offX, offY int) string {
 	}
 
 	fgLines := strings.Split(fg, "\n")
-	fgH := len(fgLines)
-	fgW := 0
-	for _, l := range fgLines {
-		if w := lipgloss.Width(l); w > fgW {
-			fgW = w
-		}
-	}
-
+	fgW, fgH := lipgloss.Width(fg), lipgloss.Height(fg)
 	startY := max(0, min(bgH-fgH, (bgH-fgH)/2+offY))
 	startX := max(0, min(bgW-fgW, (bgW-fgW)/2+offX))
-
-	// Available width for overlay content
 	availW := bgW - startX
 
 	var sb strings.Builder
@@ -342,16 +316,13 @@ func renderOverlay(bg, fg string, bgW, bgH, offX, offY int) string {
 		if i < len(bgLines) {
 			bgLine = bgLines[i]
 		}
-
 		fgIdx := i - startY
 		if fgIdx >= 0 && fgIdx < fgH {
 			fgLine := fgLines[fgIdx]
 			fgLineW := lipgloss.Width(fgLine)
-			// Pad to full overlay width so right edge aligns consistently
 			if fgLineW < fgW {
 				fgLine += strings.Repeat(" ", fgW-fgLineW)
 			}
-			// Truncate if overlay exceeds available terminal width
 			if fgW > availW {
 				fgLine = truncateAnsi(fgLine, availW)
 			}
@@ -404,109 +375,27 @@ func OverlayBounds(m *model.Model) (x, y, w, h int) {
 	return
 }
 
-func GenerateHelpText(m *model.Model) string {
-	bindings := make(map[string][]string)
-	for k, v := range m.Cfg.Hotkeys.TUI {
-		bindings[v] = append(bindings[v], k)
-	}
-	const helpKeyColW = 20
-	fmtAct := func(action, label string) string {
-		keys := bindings[action]
-		if len(keys) == 0 {
-			return ""
-		}
-		slices.Sort(keys)
-		var formatted []string
-		for _, k := range keys {
-			formatted = append(formatted, component.FormatKey(k))
-		}
-		keyPart := m.Styles.HintKey.Render(strings.Join(formatted, ", "))
-		lblPart := m.Styles.HelpAction.Render(label)
-		padW := max(0, helpKeyColW-lipgloss.Width(keyPart))
-		return "  " + keyPart + strings.Repeat(" ", padW) + " " + lblPart
-	}
-	lines := []string{m.Styles.HelpHeader.Render("Shortcuts:"), ""}
-	sections := []struct {
-		title string
-		items []struct{ act, lbl string }
-	}{
-		{"General:", []struct{ act, lbl string }{
-			{"quit", "Quit"},
-			{"toggle_help", "Toggle help"},
-			{"toggle_theme", "Toggle theme picker"},
-			{"toggle_settings", "Toggle settings"},
-			{"toggle_sort", "Toggle sort mode"},
-			{"tab_search", "Search tab"},
-			{"tab_history", "History tab"},
-			{"tab_rules", "Rules tab"},
-			{"tab_add", "Add tab"},
-		}},
-		{"Search input:", []struct{ act, lbl string }{
-			{"toggle_focus", "Focus results list"},
-			{"scroll_up", "Previous result"},
-			{"scroll_down", "Next result"},
-			{"open_result", "Open result"},
-			{"delete_result", "Delete result"},
-		}},
-		{"Results list:", []struct{ act, lbl string }{
-			{"toggle_focus", "Back to input"},
-			{"scroll_up", "Navigate up"},
-			{"scroll_down", "Navigate down"},
-			{"open_result", "Open selected"},
-			{"delete_result", "Delete selected"},
-		}},
-	}
-	for i, sec := range sections {
-		if i > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, m.Styles.HelpHeader.Render(sec.title))
-		for _, a := range sec.items {
-			if s := fmtAct(a.act, a.lbl); s != "" {
-				lines = append(lines, s)
-			}
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
 func ComputeHintRegions(m *model.Model) []model.HintRegion {
-	entries := hintEntries(m)
-	isNoColor := m.ThemeName == "no-color"
-	sep := m.Styles.Hint.Render("  ·  ")
-	if isNoColor {
-		sep = "  |  "
+	keyMap := m.Keys.For(keyContext(m))
+	hints := keyMap.ShortHints()
+	var separator string
+	if m.ThemeName == "no-color" {
+		separator = " | "
+	} else {
+		separator = " · "
 	}
-	sepW := lipgloss.Width(sep)
+	sepW := lipgloss.Width(m.Help.Styles.ShortSeparator.Render(separator))
 
 	var regions []model.HintRegion
 	x := 2
-	first := true
-	for _, e := range entries {
-		k := e.key
-		if k == "" {
-			k = m.Keys.BestKey(e.act)
-		}
-		if k == "" {
-			continue
-		}
-		if !first {
+	for i, hint := range hints {
+		if i > 0 {
 			x += sepW
 		}
-		first = false
-		var hintW int
-		if isNoColor {
-			hintW = lipgloss.Width(k + " " + e.lbl)
-		} else {
-			keyRender := m.Styles.HintKey.Render(k)
-			lblRender := m.Styles.Hint.Render(" " + e.lbl)
-			hintW = lipgloss.Width(keyRender) + lipgloss.Width(lblRender)
-		}
-		action := e.act
-		if action == "" {
-			action = config.Action(e.lbl) // use label as action id for fixed keys
-		}
-		regions = append(regions, model.HintRegion{X0: x, X1: x + hintW, Action: action})
+		help := hint.Binding.Help()
+		hintW := lipgloss.Width(m.Help.Styles.ShortKey.Render(help.Key)) + 1 +
+			lipgloss.Width(m.Help.Styles.ShortDesc.Render(help.Desc))
+		regions = append(regions, model.HintRegion{X0: x, X1: x + hintW, Action: hint.Action})
 		x += hintW
 	}
 	return regions
