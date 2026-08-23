@@ -36,7 +36,6 @@ func (a *app) View() tea.View {
 	v := tea.NewView(render.View(a.m))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
-	v.WindowTitle = "Hister"
 	if a.m.ThemeName != "no-color" {
 		v.BackgroundColor = a.m.BackgroundColor
 		v.ForegroundColor = a.m.ForegroundColor

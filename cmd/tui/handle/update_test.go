@@ -5,6 +5,7 @@
 package handle
 
 import (
+	"image/color"
 	"maps"
 	"testing"
 
@@ -47,6 +48,30 @@ func TestPasteReachesFocusedBubblesComponents(t *testing.T) {
 	Update(m, tea.PasteMsg{Content: "first line\nsecond line"})
 	if got := m.AddText.Value(); got != "first line\nsecond line" {
 		t.Fatalf("textarea after paste = %q", got)
+	}
+}
+
+func TestBackgroundColorSelectsMatchingAutomaticTheme(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := handleTestModel(t)
+	m.Cfg.TUI.ColorScheme = "auto"
+
+	if cmd := Update(m, tea.BackgroundColorMsg{Color: color.White}); cmd == nil {
+		t.Fatal("background color update did not request a redraw")
+	}
+	if m.IsDarkBg {
+		t.Fatal("white terminal background was classified as dark")
+	}
+	if m.ThemeName != m.Cfg.TUI.LightTheme {
+		t.Fatalf("theme = %q, want light theme %q", m.ThemeName, m.Cfg.TUI.LightTheme)
+	}
+
+	Update(m, tea.BackgroundColorMsg{Color: color.Black})
+	if !m.IsDarkBg {
+		t.Fatal("black terminal background was classified as light")
+	}
+	if m.ThemeName != m.Cfg.TUI.DarkTheme {
+		t.Fatalf("theme = %q, want dark theme %q", m.ThemeName, m.Cfg.TUI.DarkTheme)
 	}
 }
 
