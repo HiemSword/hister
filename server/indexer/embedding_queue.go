@@ -18,6 +18,7 @@ import (
 const (
 	embeddingQueuePollInterval = time.Second
 	embeddingRetryMaxDelay     = time.Minute
+	embeddingMaxJobAttempts    = 5
 	defaultEmbeddingWorkers    = 2
 )
 
@@ -244,6 +245,19 @@ func embeddingRetryDelay(attempt uint) time.Duration {
 }
 
 func (q *embeddingQueue) retry(job *model.EmbeddingJob, jobErr error) {
+	if job.Attempts >= embeddingMaxJobAttempts {
+		retry, err := model.FailEmbeddingJob(job.DocID, jobErr.Error())
+		if err != nil {
+			log.Warn().Err(err).Str("id", job.DocID).Msg("failed to quarantine embedding job")
+			return
+		}
+		if retry {
+			q.notify()
+			return
+		}
+		log.Error().Err(jobErr).Str("id", job.DocID).Uint("attempts", job.Attempts).Msg("embedding job quarantined")
+		return
+	}
 	retryAt := time.Now().Add(embeddingRetryDelay(job.Attempts))
 	if err := model.RetryEmbeddingJob(job.DocID, retryAt, jobErr.Error()); err != nil {
 		log.Warn().Err(err).Str("id", job.DocID).Msg("failed to retry embedding job")

@@ -15,11 +15,13 @@ import (
 const (
 	EmbeddingJobPending    = "pending"
 	EmbeddingJobInProgress = "in_progress"
+	EmbeddingJobFailed     = "failed"
 )
 
 // EmbeddingJob is a durable, deduplicated request to embed the latest indexed
-// version of a document. Completed jobs are deleted. Dirty records indicate
-// that the document changed while a worker was processing it.
+// version of a document. Completed jobs are deleted. Failed jobs are retained
+// with their last error until new document contents enqueue them again. Dirty
+// records indicate that the document changed while a worker was processing it.
 type EmbeddingJob struct {
 	DocID       string    `gorm:"primaryKey;type:text"`
 	Status      string    `gorm:"not null;index"`
@@ -41,6 +43,7 @@ func embeddingDB() (*gorm.DB, error) {
 // EnqueueEmbeddingJob adds a document to the embedding work set. Pending jobs
 // already represent the latest document stored in the index. An update to an
 // active job marks it dirty so it is processed again after the active attempt.
+// Enqueuing a failed job resets its failure state and attempt count.
 func EnqueueEmbeddingJob(docID string) error {
 	if docID == "" {
 		return errors.New("embedding job document ID must not be empty")
@@ -94,6 +97,7 @@ func ClaimNextEmbeddingJob() (*EmbeddingJob, error) {
 		var job EmbeddingJob
 		now := time.Now()
 		err := db.Where("status = ? AND available_at <= ?", EmbeddingJobPending, now).
+			Order("available_at ASC").
 			Order("created_at ASC").
 			First(&job).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -181,6 +185,44 @@ func RetryEmbeddingJob(docID string, retryAt time.Time, lastError string) error 
 			),
 			"updated_at": now,
 		}).Error
+}
+
+// FailEmbeddingJob moves an active job to the failed state. If the document
+// changed while the job was active, its latest contents return to pending
+// instead and the attempt count is reset.
+func FailEmbeddingJob(docID string, lastError string) (retry bool, err error) {
+	db, err := embeddingDB()
+	if err != nil {
+		return false, err
+	}
+	now := time.Now()
+	result := db.Model(&EmbeddingJob{}).
+		Where("doc_id = ? AND status = ? AND dirty = ?", docID, EmbeddingJobInProgress, false).
+		Updates(map[string]any{
+			"status":     EmbeddingJobFailed,
+			"last_error": lastError,
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 1 {
+		return false, nil
+	}
+	result = db.Model(&EmbeddingJob{}).
+		Where("doc_id = ? AND status = ? AND dirty = ?", docID, EmbeddingJobInProgress, true).
+		Updates(map[string]any{
+			"status":       EmbeddingJobPending,
+			"dirty":        false,
+			"attempts":     0,
+			"available_at": now,
+			"last_error":   "",
+			"updated_at":   now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // ReleaseEmbeddingJob returns a claimed job to pending without counting the

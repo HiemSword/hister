@@ -6,6 +6,7 @@ package indexer
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -257,5 +258,40 @@ func TestDeleteCancelsActiveEmbeddingJob(t *testing.T) {
 	}
 	if d := idx.GetByDocID(url); d != nil {
 		t.Fatalf("deleted document remains indexed: %#v", d)
+	}
+}
+
+func TestEmbeddingQueueQuarantinesJobAfterMaximumAttempts(t *testing.T) {
+	testutil.InitModel(t)
+	const docID = "https://example.com/poison"
+
+	if err := model.EnqueueEmbeddingJob(docID); err != nil {
+		t.Fatalf("enqueue job: %v", err)
+	}
+	job, err := model.ClaimNextEmbeddingJob()
+	if err != nil || job == nil {
+		t.Fatalf("claim job = %#v, %v", job, err)
+	}
+	job.Attempts = embeddingMaxJobAttempts
+	if err := model.DB.Model(&model.EmbeddingJob{}).
+		Where("doc_id = ?", docID).
+		Update("attempts", embeddingMaxJobAttempts).Error; err != nil {
+		t.Fatalf("set job attempts: %v", err)
+	}
+	queue := &embeddingQueue{wake: make(chan struct{}, 1)}
+	queue.retry(job, errors.New("embedding timed out"))
+
+	var stored model.EmbeddingJob
+	if err := model.DB.Where("doc_id = ?", docID).First(&stored).Error; err != nil {
+		t.Fatalf("load quarantined job: %v", err)
+	}
+	if stored.Status != model.EmbeddingJobFailed {
+		t.Fatalf("job status = %q, want %q", stored.Status, model.EmbeddingJobFailed)
+	}
+	if stored.LastError != "embedding timed out" {
+		t.Fatalf("job error = %q", stored.LastError)
+	}
+	if stored.Attempts != embeddingMaxJobAttempts {
+		t.Fatalf("job attempts = %d, want %d", stored.Attempts, embeddingMaxJobAttempts)
 	}
 }
