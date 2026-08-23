@@ -1,3 +1,7 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package cmd
 
 import (
@@ -7,8 +11,8 @@ import (
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +42,7 @@ var createUserCmd = &cobra.Command{
 		if _, err := model.CreateUser(username, password, isAdmin); err != nil {
 			exit(1, "Failed to create user: "+err.Error())
 		}
-		fmt.Println(cliSuccessStyle.Render("✓") + " User created: " + cliInfoStyle.Render(username))
+		cliPrintln(cliSuccessStyle.Render("✓") + " User created: " + cliInfoStyle.Render(username))
 	},
 }
 
@@ -68,12 +72,12 @@ var deleteUserCmd = &cobra.Command{
 			if err := c.DeleteDocuments(q); err != nil {
 				exit(1, "Failed to purge user documents: "+err.Error())
 			}
-			fmt.Printf("%s Purged %d document(s) for user %s\n", cliSuccessStyle.Render("✓"), res.Total, cliInfoStyle.Render(username))
+			cliPrintf("%s Purged %d document(s) for user %s\n", cliSuccessStyle.Render("✓"), res.Total, cliInfoStyle.Render(username))
 		}
 		if err := model.DeleteUser(username); err != nil {
 			exit(1, "Failed to delete user: "+err.Error())
 		}
-		fmt.Println(cliSuccessStyle.Render("✓") + " User deleted: " + cliInfoStyle.Render(username))
+		cliPrintln(cliSuccessStyle.Render("✓") + " User deleted: " + cliInfoStyle.Render(username))
 	},
 }
 
@@ -92,14 +96,14 @@ var showUserCmd = &cobra.Command{
 		if u.IsAdmin {
 			admin = "yes"
 		}
-		fmt.Println(cliInfoStyle.Render("Username:   ") + u.Username)
-		fmt.Println(cliInfoStyle.Render("ID:         ") + fmt.Sprintf("%d", u.ID))
-		fmt.Println(cliInfoStyle.Render("Admin:      ") + admin)
+		cliPrintln(cliInfoStyle.Render("Username:   ") + u.Username)
+		cliPrintln(cliInfoStyle.Render("ID:         ") + fmt.Sprintf("%d", u.ID))
+		cliPrintln(cliInfoStyle.Render("Admin:      ") + admin)
 		if showToken, _ := cmd.Flags().GetBool("token"); showToken {
-			fmt.Println(cliInfoStyle.Render("Token:      ") + u.Token)
+			cliPrintln(cliInfoStyle.Render("Token:      ") + u.Token)
 		}
-		fmt.Println(cliInfoStyle.Render("Created at: ") + u.CreatedAt.Format("2006-01-02 15:04:05"))
-		fmt.Println(cliInfoStyle.Render("Updated at: ") + u.UpdatedAt.Format("2006-01-02 15:04:05"))
+		cliPrintln(cliInfoStyle.Render("Created at: ") + u.CreatedAt.Format("2006-01-02 15:04:05"))
+		cliPrintln(cliInfoStyle.Render("Updated at: ") + u.UpdatedAt.Format("2006-01-02 15:04:05"))
 	},
 }
 
@@ -117,7 +121,7 @@ var updateUserCmd = &cobra.Command{
 			if err := model.UpdateUsername(username, newUsername); err != nil {
 				exit(1, "Failed to update username: "+err.Error())
 			}
-			fmt.Println(cliSuccessStyle.Render("✓") + " Username changed: " + cliInfoStyle.Render(username) + " → " + cliInfoStyle.Render(newUsername))
+			cliPrintln(cliSuccessStyle.Render("✓") + " Username changed: " + cliInfoStyle.Render(username) + " → " + cliInfoStyle.Render(newUsername))
 			username = newUsername
 			changed = true
 		}
@@ -127,7 +131,7 @@ var updateUserCmd = &cobra.Command{
 			if err != nil {
 				exit(1, "Failed to regenerate token: "+err.Error())
 			}
-			fmt.Println(cliSuccessStyle.Render("✓") + " New token for " + cliInfoStyle.Render(username) + ": " + cliInfoStyle.Render(token))
+			cliPrintln(cliSuccessStyle.Render("✓") + " New token for " + cliInfoStyle.Render(username) + ": " + cliInfoStyle.Render(token))
 			changed = true
 		}
 
@@ -140,7 +144,7 @@ var updateUserCmd = &cobra.Command{
 			if isAdmin {
 				status = "enabled"
 			}
-			fmt.Println(cliSuccessStyle.Render("✓") + " Admin " + status + " for " + cliInfoStyle.Render(username))
+			cliPrintln(cliSuccessStyle.Render("✓") + " Admin " + status + " for " + cliInfoStyle.Render(username))
 			changed = true
 		}
 
@@ -162,12 +166,12 @@ func (m passwordModel) Init() tea.Cmd {
 
 func (m passwordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter":
 			m.done = true
 			return m, tea.Quit
-		case tea.KeyCtrlC, tea.KeyEsc:
+		case "ctrl+c", "esc":
 			m.err = errors.New("cancelled")
 			return m, tea.Quit
 		}
@@ -177,11 +181,11 @@ func (m passwordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m passwordModel) View() string {
+func (m passwordModel) View() tea.View {
 	if m.done || m.err != nil {
-		return ""
+		return tea.NewView("")
 	}
-	return m.input.View() + "\n"
+	return tea.NewView(m.input.View() + "\n")
 }
 
 func promptPassword(prompt string) (string, error) {

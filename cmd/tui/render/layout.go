@@ -1,4 +1,5 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
+// SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -6,29 +7,30 @@ package render
 
 import (
 	"fmt"
-	"os"
+	"image/color"
 	"strings"
 
 	"github.com/asciimoo/hister/cmd/tui/component"
 	"github.com/asciimoo/hister/cmd/tui/model"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
 type overlayDef struct {
 	content func(*model.Model) string
-	border  func(*model.Model) lipgloss.Color
+	border  func(*model.Model) color.Color
 	offset  func(*model.Model) (int, int) // nil = use OverlayOff
 }
 
 var overlayDefs = map[model.ViewState]overlayDef{
-	model.StateHelp:            {HelpOverlay, func(m *model.Model) lipgloss.Color { return m.Styles.HelpBorder }, nil},
-	model.StateDialog:          {func(m *model.Model) string { return DeleteDialog(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.DialogBorder }, nil},
-	model.StateThemePicker:     {func(m *model.Model) string { return ThemePicker(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.ThemeBorder }, nil},
-	model.StateSettings:        {func(m *model.Model) string { return Settings(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.HelpBorder }, nil},
-	model.StateContextMenu:     {func(m *model.Model) string { return ContextMenu(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.DialogBorder }, MenuOverlayOffset},
-	model.StatePrioritizeInput: {func(m *model.Model) string { return PrioritizeInput(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.DialogBorder }, nil},
-	model.StateLabelInput:      {LabelInput, func(m *model.Model) lipgloss.Color { return m.Styles.ThemeBorder }, nil},
+	model.StateHelp:            {HelpOverlay, func(m *model.Model) color.Color { return m.Styles.HelpBorder }, nil},
+	model.StateDialog:          {func(m *model.Model) string { return DeleteDialog(m) }, func(m *model.Model) color.Color { return m.Styles.DialogBorder }, nil},
+	model.StateThemePicker:     {func(m *model.Model) string { return ThemePicker(m) }, func(m *model.Model) color.Color { return m.Styles.ThemeBorder }, nil},
+	model.StateSettings:        {func(m *model.Model) string { return Settings(m) }, func(m *model.Model) color.Color { return m.Styles.HelpBorder }, nil},
+	model.StateContextMenu:     {func(m *model.Model) string { return ContextMenu(m) }, func(m *model.Model) color.Color { return m.Styles.DialogBorder }, MenuOverlayOffset},
+	model.StatePrioritizeInput: {func(m *model.Model) string { return PrioritizeInput(m) }, func(m *model.Model) color.Color { return m.Styles.DialogBorder }, nil},
+	model.StateLabelInput:      {LabelInput, func(m *model.Model) color.Color { return m.Styles.ThemeBorder }, nil},
 }
 
 func View(m *model.Model) string {
@@ -69,10 +71,10 @@ func MainView(m *model.Model) string {
 		content := renderer(m)
 		m.Workspace.SetContent(content)
 		target := m.WorkspaceSelectionY
-		if target < m.Workspace.YOffset {
+		if target < m.Workspace.YOffset() {
 			m.Workspace.SetYOffset(target)
-		} else if target >= m.Workspace.YOffset+m.Workspace.Height {
-			m.Workspace.SetYOffset(max(0, target-m.Workspace.Height+2))
+		} else if target >= m.Workspace.YOffset()+m.Workspace.Height() {
+			m.Workspace.SetYOffset(max(0, target-m.Workspace.Height()+2))
 		}
 		hints := Hints(m)
 		return strings.Join([]string{header, div, m.Workspace.View(), div, hints}, "\n")
@@ -120,12 +122,12 @@ func ResizeSearchViewports(m *model.Model) {
 	if DetailsSplit(m) {
 		leftW -= DetailsPaneWidth(m)
 	}
-	m.Viewport.Width = max(1, leftW-2)
-	m.Viewport.Height = bodyH
+	m.Viewport.SetWidth(max(1, leftW-2))
+	m.Viewport.SetHeight(bodyH)
 
 	if DetailsVisible(m) {
-		m.Details.Width = max(1, DetailsPaneWidth(m)-2)
-		m.Details.Height = max(1, bodyH-2)
+		m.Details.SetWidth(max(1, DetailsPaneWidth(m)-2))
+		m.Details.SetHeight(max(1, bodyH-2))
 	}
 }
 
@@ -159,8 +161,8 @@ func SearchBody(m *model.Model) string {
 }
 
 func resultsViewport(m *model.Model, width, height int) string {
-	content := normalizeBlock(m.Viewport.View(), max(1, m.Viewport.Width), height)
-	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 {
+	content := normalizeBlock(m.Viewport.View(), max(1, m.Viewport.Width()), height)
+	if m.Viewport.TotalLineCount() > m.Viewport.Height() && m.Viewport.Height() > 0 {
 		content = lipgloss.JoinHorizontal(lipgloss.Top, content, " ", Scrollbar(m))
 	}
 	return normalizeBlock(content, width, height)
@@ -302,7 +304,7 @@ func keyContext(m *model.Model) component.KeyContext {
 func Hints(m *model.Model) string {
 	h := m.Help
 	h.ShowAll = false
-	h.Width = max(1, m.Width-4)
+	h.SetWidth(max(1, m.Width-4))
 	if m.ThemeName == "no-color" {
 		h.ShortSeparator = " | "
 	} else {
@@ -314,7 +316,7 @@ func Hints(m *model.Model) string {
 func HelpOverlay(m *model.Model) string {
 	h := m.Help
 	h.ShowAll = true
-	h.Width = max(20, overlayMaxWidth(m)-8)
+	h.SetWidth(max(20, overlayMaxWidth(m)-8))
 	content := m.Styles.HelpHeader.Render("Keyboard shortcuts") + "\n\n" +
 		h.View(m.Keys.For(keyContext(m)))
 	return m.Styles.Help.Render(content)
@@ -325,7 +327,7 @@ func overlayMaxWidth(m *model.Model) int {
 }
 
 // wraps content in a rounded border with drag handle and close button.
-func renderOverlayBox(content string, borderColor lipgloss.Color, maxWidth int) string {
+func renderOverlayBox(content string, borderColor color.Color, maxWidth int) string {
 	lines := strings.Split(content, "\n")
 	maxW := 0
 	for _, l := range lines {
@@ -370,61 +372,33 @@ func renderOverlayBox(content string, borderColor lipgloss.Color, maxWidth int) 
 	return sb.String()
 }
 
-// wraps a rendered line with faint ANSI codes.
-// Returns the string unchanged in NO_COLOR mode.
-func applyDim(s string) string {
-	if s == "" || os.Getenv("NO_COLOR") != "" {
-		return s
+// dimCanvas applies faint styling to the already-parsed background cells.
+// Working at the Charm cell layer preserves nested colors and attributes
+// without hand-editing CSI resets in the rendered string.
+func dimCanvas(canvas *lipgloss.Canvas) {
+	for y := range canvas.Height() {
+		for x := range canvas.Width() {
+			cell := canvas.CellAt(x, y)
+			if cell == nil {
+				continue
+			}
+			cell = cell.Clone()
+			cell.Style.Attrs |= uv.AttrFaint
+			canvas.SetCell(x, y, cell)
+		}
 	}
-	const dim = "\x1b[2m"
-	const reset = "\x1b[0m"
-	result := dim + strings.ReplaceAll(s, reset, reset+dim)
-	return result + reset
 }
 
 func renderOverlay(bg, fg string, bgW, bgH, offX, offY int) string {
-	bgLines := strings.Split(bg, "\n")
-	for len(bgLines) < bgH {
-		bgLines = append(bgLines, "")
-	}
-
-	fgLines := strings.Split(fg, "\n")
 	fgW, fgH := lipgloss.Width(fg), lipgloss.Height(fg)
 	startY := max(0, min(bgH-fgH, (bgH-fgH)/2+offY))
 	startX := max(0, min(bgW-fgW, (bgW-fgW)/2+offX))
-	availW := bgW - startX
 
-	var sb strings.Builder
-	for i := range bgH {
-		if i > 0 {
-			sb.WriteByte('\n')
-		}
-		bgLine := ""
-		if i < len(bgLines) {
-			bgLine = bgLines[i]
-		}
-		fgIdx := i - startY
-		if fgIdx >= 0 && fgIdx < fgH {
-			fgLine := fgLines[fgIdx]
-			fgLineW := lipgloss.Width(fgLine)
-			if fgLineW < fgW {
-				fgLine += strings.Repeat(" ", fgW-fgLineW)
-			}
-			if fgW > availW {
-				fgLine = truncateAnsi(fgLine, availW)
-			}
-			left := truncateAnsi(bgLine, startX)
-			right := sliceAnsiFrom(bgLine, startX+fgW)
-			if os.Getenv("NO_COLOR") != "" {
-				sb.WriteString(left + fgLine + right)
-			} else {
-				sb.WriteString("\x1b[0m" + applyDim(left) + fgLine + applyDim(right))
-			}
-		} else {
-			sb.WriteString(applyDim(bgLine))
-		}
-	}
-	return sb.String()
+	canvas := lipgloss.NewCanvas(bgW, bgH)
+	canvas.Compose(lipgloss.NewCompositor(lipgloss.NewLayer(bg)))
+	dimCanvas(canvas)
+	canvas.Compose(lipgloss.NewCompositor(lipgloss.NewLayer(fg).X(startX).Y(startY)))
+	return canvas.Render()
 }
 
 func MenuOverlayOffset(m *model.Model) (int, int) {

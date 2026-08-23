@@ -12,8 +12,8 @@ import (
 
 	"github.com/asciimoo/hister/config"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 )
 
 // KeyContext selects the concise, task-specific bindings shown in the footer.
@@ -114,7 +114,7 @@ func (k KeyMap) For(context KeyContext) KeyMap {
 }
 
 // Action resolves a key press through Bubbles bindings.
-func (k KeyMap) Action(msg tea.KeyMsg) config.Action {
+func (k KeyMap) Action(msg tea.KeyPressMsg) config.Action {
 	for _, definition := range actionDefinitions {
 		if binding, ok := k.bindings[definition.action]; ok && key.Matches(msg, binding) {
 			return definition.action

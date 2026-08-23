@@ -7,7 +7,7 @@ package mouse
 import (
 	"github.com/asciimoo/hister/cmd/tui/model"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 )
@@ -40,7 +40,7 @@ func focusRulesInput(m *model.Model, section, field int) {
 // --- non-search tab handling ---
 
 func workspaceTargetAt(m *model.Model, msg Event) (model.WorkspaceTarget, bool) {
-	y := msg.Y - model.RowWorkspaceStart + m.Workspace.YOffset
+	y := msg.Y - model.RowWorkspaceStart + m.Workspace.YOffset()
 	for _, target := range m.WorkspaceTargets {
 		if y >= target.Y && y < target.Y+target.Height {
 			return target, true

@@ -12,7 +12,7 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func ThemePicker(m *model.Model) string {
@@ -229,7 +229,7 @@ func LabelInput(m *model.Model) string {
 	lines := []string{
 		m.Styles.Title.Render("Edit label"),
 		"",
-		m.Styles.URL.Render(truncateLine(m.LabelURL, max(20, m.LabelInput.Width))),
+		m.Styles.URL.Render(truncateLine(m.LabelURL, max(20, m.LabelInput.Width()))),
 		"",
 		m.LabelInput.View(),
 		"",

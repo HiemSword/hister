@@ -1,3 +1,7 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package cmd
 
 import (
@@ -118,7 +122,7 @@ Use '-' as OUTPUT_FILE to write to stdout.`,
 		}
 
 		if outputFile != "-" {
-			fmt.Printf("%s Exported %d document(s) to %s\n",
+			cliPrintf("%s Exported %d document(s) to %s\n",
 				cliSuccessStyle.Render("✓"), count, cliInfoStyle.Render(outputFile))
 		}
 	},
@@ -282,7 +286,7 @@ func printImportSummary(imported, skipped, errCount int) {
 	if errCount > 0 {
 		msg += fmt.Sprintf(" (%d errors)", errCount)
 	}
-	fmt.Println(msg)
+	cliPrintln(msg)
 }
 
 func isHisterJSONExport(inputFile string) (bool, error) {

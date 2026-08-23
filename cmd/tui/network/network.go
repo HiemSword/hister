@@ -12,7 +12,7 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/server/indexer"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 )

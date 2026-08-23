@@ -11,33 +11,43 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/render"
 	"github.com/asciimoo/hister/config"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 type app struct{ m *model.Model }
 
 func (a *app) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		textinput.Blink,
 		a.m.FetchServerConfigCmd(),
+		tea.RequestBackgroundColor,
 		network.ConnectWebSocket(a.m.Cfg.WebSocketURL(), a.m.Cfg.BaseURL(""), a.m.Cfg.App.AccessToken, a.m.WsChan, a.m.WsDone),
 		network.ListenToWebSocket(a.m.WsChan, a.m.WsDone),
-	)
+	}
+	return tea.Batch(cmds...)
 }
 
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, handle.Update(a.m, msg)
 }
 
-func (a *app) View() string {
-	return render.View(a.m)
+func (a *app) View() tea.View {
+	v := tea.NewView(render.View(a.m))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = "Hister"
+	if a.m.ThemeName != "no-color" {
+		v.BackgroundColor = a.m.BackgroundColor
+		v.ForegroundColor = a.m.ForegroundColor
+	}
+	return v
 }
 
 func SearchTUI(cfg *config.Config) error {
 	m := model.InitialModel(cfg)
 	a := &app{m: m}
-	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(a)
 	_, err := p.Run()
 	m.Close()
 	return err

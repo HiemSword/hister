@@ -1,9 +1,14 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package cmd
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"io"
 	"maps"
 	"net/http"
@@ -24,7 +29,8 @@ import (
 	"github.com/asciimoo/hister/server/indexer"
 	"github.com/asciimoo/hister/server/model"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -47,7 +53,6 @@ var (
 	cliErrorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 	cliSuccessStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
 	cliInfoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
-	cliWarningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 	cliBoldStyle    = lipgloss.NewStyle().Bold(true)
 )
 
@@ -207,11 +212,22 @@ var listenCmd = &cobra.Command{
 
 func exit(errno int, msg string) {
 	if errno != 0 {
-		fmt.Println(cliErrorStyle.Render("Error!") + " " + msg)
+		cliPrintln(cliErrorStyle.Render("Error!") + " " + msg)
 	} else {
-		fmt.Println(msg)
+		cliPrintln(msg)
 	}
 	os.Exit(errno)
+}
+
+// cliPrintln and cliPrintf send styled human output through Lip Gloss's
+// profile-aware writer. This strips CSI/SGR sequences from pipes and honors
+// NO_COLOR while retaining color (downsampled as needed) on terminals.
+func cliPrintln(v ...any) {
+	_, _ = lipgloss.Fprintln(os.Stdout, v...)
+}
+
+func cliPrintf(format string, v ...any) {
+	_, _ = lipgloss.Fprintf(os.Stdout, format, v...)
 }
 
 func isConnectionError(err error) bool {
@@ -365,6 +381,8 @@ func init() {
 }
 
 func newConsoleWriter(out io.Writer, noColor bool) zerolog.ConsoleWriter {
+	_, noColorEnv := os.LookupEnv("NO_COLOR")
+	noColor = noColor || noColorEnv || colorprofile.Detect(out, os.Environ()) <= colorprofile.NoTTY
 	return zerolog.ConsoleWriter{
 		Out:     out,
 		NoColor: noColor,
@@ -376,7 +394,7 @@ func newConsoleWriter(out io.Writer, noColor bool) zerolog.ConsoleWriter {
 			if noColor {
 				return fmt.Sprintf("| %s |", level)
 			}
-			var color lipgloss.Color
+			var color color.Color
 			switch i {
 			case "trace":
 				color = lipgloss.Color("240") // dark gray
@@ -548,10 +566,10 @@ func initIndex() *indexer.Indexer {
 		}
 	}
 	if indexer.Version > v {
-		log.Warn().Msg(cliWarningStyle.Render("There is a new indexer version. Run `hister reindex` to update your index."))
+		log.Warn().Msg("There is a new indexer version. Run `hister reindex` to update your index.")
 	}
 	if storedFingerprint != activeFingerprint {
-		log.Warn().Msg(cliWarningStyle.Render("The analyzer configuration differs from the indexed configuration. Run `hister reindex` to update your index."))
+		log.Warn().Msg("The analyzer configuration differs from the indexed configuration. Run `hister reindex` to update your index.")
 	}
 	log.Debug().Msg("Indexer initialization complete")
 	return idx

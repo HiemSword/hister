@@ -1,4 +1,5 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
+// SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -9,8 +10,8 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/render"
 	"github.com/asciimoo/hister/config"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 )
@@ -40,22 +41,21 @@ const (
 	actionWheel
 )
 
-// Event normalizes mouse messages for the layout hit testing shared by tabs,
-// overlays, and the results viewport.
+// Event normalizes Bubble Tea v2's typed mouse messages for the layout hit
+// testing shared by tabs, overlays, and the results viewport.
 type Event struct {
-	X, Y   int
-	Button tea.MouseButton
+	tea.Mouse
 	Action action
 }
 
 func newEvent(msg tea.MouseMsg) Event {
-	e := Event{X: msg.X, Y: msg.Y, Button: msg.Button}
-	switch {
-	case msg.Action == tea.MouseActionRelease:
+	e := Event{Mouse: msg.Mouse()}
+	switch msg.(type) {
+	case tea.MouseReleaseMsg:
 		e.Action = actionRelease
-	case msg.Action == tea.MouseActionMotion:
+	case tea.MouseMotionMsg:
 		e.Action = actionMotion
-	case tea.MouseEvent(msg).IsWheel():
+	case tea.MouseWheelMsg:
 		e.Action = actionWheel
 	default:
 		e.Action = actionClick
@@ -86,14 +86,14 @@ func scrollToPercent(m *model.Model, mouseY int) {
 	if vp.H <= 1 {
 		return
 	}
-	maxScroll := m.TotalLines - m.Viewport.Height
+	maxScroll := m.Viewport.TotalLineCount() - m.Viewport.Height()
 	if maxScroll <= 0 {
 		return
 	}
 	relY := max(0, min(mouseY-vp.Y, vp.H-1))
 	pct := float64(relY) / float64(vp.H-1)
 	m.Viewport.SetYOffset(int(pct * float64(maxScroll)))
-	contentY := m.Viewport.YOffset + m.Viewport.Height/2
+	contentY := m.Viewport.YOffset() + m.Viewport.Height()/2
 	if idx := m.FindResultAtY(contentY); idx >= 0 {
 		m.SelectedIdx = idx
 	}
@@ -102,9 +102,9 @@ func scrollToPercent(m *model.Model, mouseY int) {
 
 func wheelDelta(msg Event) int {
 	switch msg.Button {
-	case tea.MouseButtonWheelUp:
+	case tea.MouseWheelUp:
 		return -1
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		return 1
 	default:
 		return 0
@@ -112,7 +112,7 @@ func wheelDelta(msg Event) int {
 }
 
 func isLeftClick(msg Event) bool {
-	return msg.Action == actionClick && msg.Button == tea.MouseButtonLeft
+	return msg.Action == actionClick && msg.Button == tea.MouseLeft
 }
 
 func isOverlayState(s model.ViewState) bool {
@@ -197,7 +197,7 @@ func (h *Handler) Handle(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 		return cmd
 	}
 
-	if event.Action == actionClick && event.Button == tea.MouseButtonRight {
+	if event.Action == actionClick && event.Button == tea.MouseRight {
 		return rightClick(m, event)
 	}
 
@@ -214,7 +214,7 @@ func (h *Handler) Handle(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	if event.Y == model.RowHints(m.Height) {
 		return h.hintRegions(m, event)
 	}
-	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 && event.X >= m.Width-model.ScrollbarWidth {
+	if m.Viewport.TotalLineCount() > m.Viewport.Height() && m.Viewport.Height() > 0 && event.X >= m.Width-model.ScrollbarWidth {
 		return scrollbarClick(m, event)
 	}
 	return h.viewportClick(m, event)
@@ -247,7 +247,7 @@ func (h *Handler) details(m *model.Model, event Event) tea.Cmd {
 		}
 		return nil
 	}
-	if event.Action == actionClick && event.Button == tea.MouseButtonRight && render.DetailsSplit(m) && !inPane {
+	if event.Action == actionClick && event.Button == tea.MouseRight && render.DetailsSplit(m) && !inPane {
 		oldIdx := m.SelectedIdx
 		cmd := rightClick(m, event)
 		if oldIdx != m.SelectedIdx {
@@ -280,7 +280,7 @@ func (h *Handler) details(m *model.Model, event Event) tea.Cmd {
 	if !render.DetailsSplit(m) {
 		return nil
 	}
-	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 && event.X == paneX-1 {
+	if m.Viewport.TotalLineCount() > m.Viewport.Height() && m.Viewport.Height() > 0 && event.X == paneX-1 {
 		oldIdx := m.SelectedIdx
 		cmd := scrollbarClick(m, event)
 		if oldIdx != m.SelectedIdx {
@@ -297,7 +297,7 @@ func (h *Handler) detailsResultClick(m *model.Model, event Event) tea.Cmd {
 	if !vp.ContainsY(event.Y) || len(m.LineOffsets) == 0 {
 		return nil
 	}
-	contentY := event.Y - vp.Y + m.Viewport.YOffset
+	contentY := event.Y - vp.Y + m.Viewport.YOffset()
 	idx := m.FindResultAtY(contentY)
 	if idx < 0 || idx >= m.GetTotalResults() || idx == m.Limit {
 		return nil
@@ -318,7 +318,7 @@ func rightClick(m *model.Model, msg Event) tea.Cmd {
 	if !vp.ContainsY(msg.Y) || len(m.LineOffsets) == 0 {
 		return nil
 	}
-	contentY := (msg.Y - vp.Y) + m.Viewport.YOffset
+	contentY := (msg.Y - vp.Y) + m.Viewport.YOffset()
 	idx := m.FindResultAtY(contentY)
 	if idx < 0 || idx >= m.GetTotalResults() || idx == m.Limit {
 		return nil
@@ -352,7 +352,7 @@ func (h *Handler) viewportClick(m *model.Model, msg Event) tea.Cmd {
 	if !vp.ContainsY(msg.Y) || len(m.LineOffsets) == 0 {
 		return nil
 	}
-	contentY := (msg.Y - vp.Y) + m.Viewport.YOffset
+	contentY := (msg.Y - vp.Y) + m.Viewport.YOffset()
 	if m.SuggestionHeight > 0 && contentY < m.SuggestionHeight && m.Results != nil && m.Results.QuerySuggestion != "" {
 		m.TextInput.SetValue(m.Results.QuerySuggestion)
 		m.TextInput.SetCursor(len([]rune(m.Results.QuerySuggestion)))

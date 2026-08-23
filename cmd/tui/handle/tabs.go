@@ -1,4 +1,5 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
+// SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -10,15 +11,15 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/config"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 )
 
-func TabKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func TabKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
 	// Suppress hotkey actions when a text input is focused.
-	if msg.Type == tea.KeyRunes && !msg.Alt {
+	if len(msg.Text) > 0 && !msg.Mod.Contains(tea.ModAlt) {
 		inputFocused := false
 		switch m.ActiveTab {
 		case model.TabAdd:
@@ -43,13 +44,13 @@ func TabKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-var tabKeyHandlers = map[int]func(*model.Model, tea.KeyMsg) tea.Cmd{
+var tabKeyHandlers = map[int]func(*model.Model, tea.KeyPressMsg) tea.Cmd{
 	model.TabHistory: HistoryKeys,
 	model.TabRules:   RulesKeys,
 	model.TabAdd:     AddKeys,
 }
 
-func HistoryKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func HistoryKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
 	switch action {
 	case config.ActionScrollUp:
@@ -81,7 +82,7 @@ func HistoryKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func RulesKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func RulesKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	if m.RulesFormFocus < model.RulesFocusList {
 		return rulesFormKeys(m, msg)
 	}
@@ -189,7 +190,7 @@ func RulesKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func rulesFormKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func rulesFormKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
 	switch action {
 	case config.ActionOpenResult:
@@ -261,7 +262,10 @@ func rulesFormKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Pass key to the focused input
+	return updateRulesInput(m, msg)
+}
+
+func updateRulesInput(m *model.Model, msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch m.RulesFormFocus {
 	case model.RulesFocusPattern:
@@ -275,7 +279,7 @@ func rulesFormKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func AddKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func AddKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	// Enter is content inside the multi-line field, not the global submit action.
 	if m.AddFocusIdx == 2 && msg.String() == "enter" {
 		var cmd tea.Cmd
@@ -316,14 +320,20 @@ func AddKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	if m.AddFocusIdx < len(m.AddInputs) {
-		var cmd tea.Cmd
-		m.AddInputs[m.AddFocusIdx], cmd = m.AddInputs[m.AddFocusIdx].Update(msg)
-		return cmd
+		return updateAddInput(m, msg)
 	}
 	if m.AddFocusIdx == 2 {
-		var cmd tea.Cmd
-		m.AddText, cmd = m.AddText.Update(msg)
-		return cmd
+		return updateAddInput(m, msg)
 	}
 	return nil
+}
+
+func updateAddInput(m *model.Model, msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	if m.AddFocusIdx < len(m.AddInputs) {
+		m.AddInputs[m.AddFocusIdx], cmd = m.AddInputs[m.AddFocusIdx].Update(msg)
+	} else if m.AddFocusIdx == 2 {
+		m.AddText, cmd = m.AddText.Update(msg)
+	}
+	return cmd
 }

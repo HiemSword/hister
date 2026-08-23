@@ -26,6 +26,7 @@ import (
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/vectorstore"
 
+	"charm.land/lipgloss/v2"
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/analysis/analyzer/custom"
 	"github.com/blevesearch/bleve/v2/analysis/token/lowercase"
@@ -38,7 +39,6 @@ import (
 	simpleFragmenter "github.com/blevesearch/bleve/v2/search/highlight/fragmenter/simple"
 	simpleHighlighter "github.com/blevesearch/bleve/v2/search/highlight/highlighter/simple"
 	"github.com/blevesearch/bleve/v2/search/query"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/rs/zerolog/log"
 )
 
