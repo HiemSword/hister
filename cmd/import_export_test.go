@@ -78,6 +78,30 @@ func TestExpandImportInputsExpandsDirectory(t *testing.T) {
 	}
 }
 
+func TestExpandImportInputsSkipsBrokenSymlink(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "a.txt")
+	last := filepath.Join(dir, "z.txt")
+	for _, path := range []string{first, last} {
+		if err := os.WriteFile(path, []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(dir, "missing.txt"), filepath.Join(dir, "b.txt")); err != nil {
+		t.Skipf("cannot create symbolic link: %v", err)
+	}
+
+	inputs, err := expandImportInputs([]string{dir}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []importFileInput{{Path: first}, {Path: last}}
+	if !reflect.DeepEqual(inputs, want) {
+		t.Fatalf("expandImportInputs() = %#v, want %#v", inputs, want)
+	}
+}
+
 func TestRemoteFileURL(t *testing.T) {
 	inputFile := filepath.Join(t.TempDir(), "My note.md")
 	got, err := remoteFileURL("Alice's Laptop", inputFile)

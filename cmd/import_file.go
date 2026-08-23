@@ -86,7 +86,8 @@ func expandImportInputs(args []string, directories []*config.Directory) ([]impor
 	walkDirectory := func(root string, directory *config.Directory) error {
 		return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
-				return walkErr
+				log.Warn().Err(walkErr).Str("path", path).Msg("Error accessing path")
+				return nil
 			}
 			if entry.IsDir() {
 				if path != root && files.ShouldSkipDir(entry.Name(), directory.Excludes, directory.IncludeHidden) {
@@ -96,7 +97,8 @@ func expandImportInputs(args []string, directories []*config.Directory) ([]impor
 			}
 			info, err := os.Stat(path)
 			if err != nil {
-				return err
+				log.Warn().Err(err).Str("path", path).Msg("Failed to inspect path")
+				return nil
 			}
 			if !info.Mode().IsRegular() || !directory.IsMatching(entry.Name()) {
 				return nil
