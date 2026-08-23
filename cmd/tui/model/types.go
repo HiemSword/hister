@@ -13,7 +13,7 @@ import (
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/indexer"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // represents the current UI state

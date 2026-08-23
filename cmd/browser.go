@@ -1,3 +1,7 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package cmd
 
 import (
@@ -357,7 +361,7 @@ func importDB(databases []DBToImport, cmd *cobra.Command, startDate *time.Time) 
 		return
 	}
 
-	fmt.Println(cliBoldStyle.Render("IMPORTING"))
+	cliPrintln(cliBoldStyle.Render("IMPORTING"))
 	fmt.Println("Starting crawl job:", job.id)
 
 	cfg.Crawler.UserAgent = UserAgent

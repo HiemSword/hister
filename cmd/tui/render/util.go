@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/asciimoo/hister/cmd/tui/component"
@@ -113,14 +113,6 @@ func truncateAnsi(s string, maxCols int) string {
 	}
 	truncated := ansi.Truncate(s, maxCols, "")
 	return truncated + strings.Repeat(" ", max(0, maxCols-ansi.StringWidth(truncated)))
-}
-
-// returns everything after the first skipCols visible columns of s.
-func sliceAnsiFrom(s string, skipCols int) string {
-	if skipCols <= 0 {
-		return s
-	}
-	return ansi.Cut(s, skipCols, ansi.StringWidth(s))
 }
 
 // sanitizeTerminalText removes styling and terminal control sequences from

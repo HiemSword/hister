@@ -1,0 +1,55 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package tui
+
+import (
+	"image/color"
+	"maps"
+	"testing"
+
+	"github.com/asciimoo/hister/cmd/tui/model"
+	"github.com/asciimoo/hister/config"
+
+	tea "charm.land/bubbletea/v2"
+)
+
+func testApp(t *testing.T) *app {
+	t.Helper()
+	cfg := config.CreateDefaultConfig()
+	cfg.TUI = config.DefaultTUIConfig
+	cfg.Hotkeys.TUI = maps.Clone(config.DefaultTUIHotkeys)
+	return &app{m: model.InitialModel(cfg)}
+}
+
+func TestViewDeclaresTerminalFeatures(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	a := testApp(t)
+	// Keep this test independent of the configured default appearance. The
+	// View contract is that a named theme declares its resolved screen colors.
+	a.m.ThemeName = "test-theme"
+	a.m.BackgroundColor = color.Black
+	a.m.ForegroundColor = color.White
+	v := a.View()
+
+	if !v.AltScreen {
+		t.Fatal("view did not request the alternate screen")
+	}
+	if v.MouseMode != tea.MouseModeCellMotion {
+		t.Fatalf("mouse mode = %v, want cell motion", v.MouseMode)
+	}
+	if v.BackgroundColor == nil || v.ForegroundColor == nil {
+		t.Fatal("themed view did not declare terminal colors")
+	}
+}
+
+func TestNoColorViewLeavesTerminalColorsUnset(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	a := testApp(t)
+	v := a.View()
+
+	if v.BackgroundColor != nil || v.ForegroundColor != nil {
+		t.Fatalf("no-color view declared terminal colors: background=%v foreground=%v", v.BackgroundColor, v.ForegroundColor)
+	}
+}

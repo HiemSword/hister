@@ -1,3 +1,7 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package cmd
 
 import (
@@ -42,7 +46,7 @@ var crawlListCmd = &cobra.Command{
 			if err != nil {
 				log.Warn().Err(err).Str("job_id", j.ID).Msg("failed to get job stats")
 			}
-			fmt.Printf("%s  %-12s  %s\n",
+			cliPrintf("%s  %-12s  %s\n",
 				cliInfoStyle.Render(j.ID),
 				crawlJobStatusLabel(j.Status),
 				j.StartURL,
@@ -123,7 +127,7 @@ var crawlDeleteCmd = &cobra.Command{
 		if err := model.DeleteCrawlJob(jobID); err != nil {
 			exit(1, "Failed to delete crawl job: "+err.Error())
 		}
-		fmt.Println(cliSuccessStyle.Render("✓") + " Crawl job deleted: " + cliInfoStyle.Render(jobID))
+		cliPrintln(cliSuccessStyle.Render("✓") + " Crawl job deleted: " + cliInfoStyle.Render(jobID))
 	},
 }
 
@@ -135,8 +139,8 @@ func showCrawlJob(jobID string) {
 		exit(1, "Failed to load crawl job stats: "+err.Error())
 	}
 
-	fmt.Println(cliBoldStyle.Render("CRAWL JOB"))
-	fmt.Printf("id: %s\n", cliInfoStyle.Render(job.ID))
+	cliPrintln(cliBoldStyle.Render("CRAWL JOB"))
+	cliPrintf("id: %s\n", cliInfoStyle.Render(job.ID))
 	fmt.Printf("status: %s\n", crawlJobStatusLabel(job.Status))
 	fmt.Printf("start_url: %s\n", job.StartURL)
 	fmt.Printf("label: %s\n", job.Label)
@@ -144,7 +148,7 @@ func showCrawlJob(jobID string) {
 	fmt.Printf("updated: %s\n", job.UpdatedAt.Format("2006-01-02 15:04:05"))
 	fmt.Println()
 
-	fmt.Println(cliBoldStyle.Render("STATE"))
+	cliPrintln(cliBoldStyle.Render("STATE"))
 	fmt.Printf("pending: %d\n", stats.Pending)
 	fmt.Printf("in_progress: %d\n", stats.InProgress)
 	fmt.Printf("done: %d\n", stats.Done)
@@ -152,7 +156,7 @@ func showCrawlJob(jobID string) {
 	fmt.Printf("skipped: %d\n", stats.Skipped)
 	fmt.Println()
 
-	fmt.Println(cliBoldStyle.Render("RULES"))
+	cliPrintln(cliBoldStyle.Render("RULES"))
 	rules, err := crawler.UnmarshalValidatorRules(job.ValidatorRules)
 	if err != nil {
 		fmt.Println(job.ValidatorRules)

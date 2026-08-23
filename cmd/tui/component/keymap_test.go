@@ -5,7 +5,7 @@ import (
 
 	"github.com/asciimoo/hister/config"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestActionDefinitionsCoverConfigActions(t *testing.T) {
@@ -28,9 +28,9 @@ func TestActionDefinitionsCoverConfigActions(t *testing.T) {
 	}
 }
 
-func keyPress(text string) tea.KeyMsg {
+func keyPress(text string) tea.KeyPressMsg {
 	runes := []rune(text)
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: runes}
+	return tea.KeyPressMsg(tea.Key{Text: text, Code: runes[0]})
 }
 
 func TestKeyMapResolvesAndRebuildsBindings(t *testing.T) {

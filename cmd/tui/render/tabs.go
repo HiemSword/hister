@@ -9,7 +9,7 @@ import (
 
 	"github.com/asciimoo/hister/cmd/tui/model"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func HistoryTab(m *model.Model) string {

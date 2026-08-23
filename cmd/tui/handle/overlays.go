@@ -15,12 +15,12 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 )
 
-func DialogKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func DialogKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	var cmd tea.Cmd
 	action := m.Keys.Action(msg)
 	key := msg.String()
@@ -66,7 +66,7 @@ func previewTheme(m *model.Model) {
 	}
 }
 
-func ThemePickerKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func ThemePickerKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	darkNames, lightNames := theme.ClassifyThemes()
 	action := m.Keys.Action(msg)
 	key := msg.String()
@@ -139,7 +139,7 @@ func ThemePickerKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func SettingsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func SettingsKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	if m.SettingsEditMode {
 		return settingsEditKey(m, msg)
 	}
@@ -165,7 +165,7 @@ func SettingsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func settingsEditKey(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func settingsEditKey(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	newKey := msg.String()
 	if newKey == "esc" {
 		items := m.SortedSettingsItems()
@@ -221,7 +221,7 @@ func settingsEditKey(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func ContextMenuKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func ContextMenuKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
 	key := msg.String()
 	switch action {
@@ -277,7 +277,7 @@ func executeContextMenuAction(m *model.Model) tea.Cmd {
 	return nil
 }
 
-func PrioritizeInputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func PrioritizeInputKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
 	key := msg.String()
 	switch {
@@ -311,7 +311,7 @@ func PrioritizeInputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func DetailsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func DetailsKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
 	if msg.String() == "esc" || action == config.ActionTogglePreview {
 		return CloseDetails(m)
@@ -371,9 +371,9 @@ func DetailsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func LabelInputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func LabelInputKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
-	if msg.Type == tea.KeyRunes && !msg.Alt {
+	if len(msg.Text) > 0 && !msg.Mod.Contains(tea.ModAlt) {
 		action = ""
 	}
 	if msg.String() == "esc" {

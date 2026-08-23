@@ -11,7 +11,7 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/render"
 	"github.com/asciimoo/hister/cmd/tui/theme"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Overlay close button layout

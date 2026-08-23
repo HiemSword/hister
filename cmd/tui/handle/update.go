@@ -1,4 +1,5 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
+// SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -11,11 +12,12 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/cmd/tui/network"
 	"github.com/asciimoo/hister/cmd/tui/render"
+	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 )
 
 var mouseHandler = mouse.New(mouse.Deps{
@@ -37,22 +39,23 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		m.Width, m.Height = msg.Width, msg.Height
 
 		vpH := max(0, m.Height-model.FixedLayoutRows)
-		m.TextInput.Width = max(1, m.Width-6)
+		m.TextInput.SetWidth(max(1, m.Width-6))
 		formW := max(12, min(72, m.Width-12))
 		for i := range m.AddInputs {
-			m.AddInputs[i].Width = formW
+			m.AddInputs[i].SetWidth(formW)
 		}
 		m.AddText.SetWidth(formW)
 		for i := range m.RulesPatternInputs {
-			m.RulesPatternInputs[i].Width = max(12, min(48, m.Width-24))
+			m.RulesPatternInputs[i].SetWidth(max(12, min(48, m.Width-24)))
 		}
-		m.LabelInput.Width = max(12, min(64, m.Width-16))
-		m.Workspace.Width = max(1, m.Width-1)
-		m.Workspace.Height = max(1, vpH+2)
-		m.Help.Width = max(1, m.Width-4)
+		m.LabelInput.SetWidth(max(12, min(64, m.Width-16)))
+		m.Workspace.SetWidth(max(1, m.Width-1))
+		m.Workspace.SetHeight(max(1, vpH+2))
+		m.Help.SetWidth(max(1, m.Width-4))
 
 		if !m.Ready {
-			m.Viewport = viewport.New(1, vpH)
+			m.Viewport = viewport.New(viewport.WithWidth(1), viewport.WithHeight(vpH))
+			m.Viewport.FillHeight = true
 			m.Viewport.SetContent("")
 			m.Ready = true
 			render.ResizeSearchViewports(m)
@@ -71,7 +74,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.Keys.Action(msg) == config.ActionQuit {
 			return tea.Quit
 		}
@@ -108,8 +111,21 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			return LabelInputKeys(m, msg)
 		}
 
+	case tea.PasteMsg:
+		return Paste(m, msg)
+
 	case tea.MouseMsg:
 		return mouseHandler.Handle(m, msg)
+
+	case tea.BackgroundColorMsg:
+		m.IsDarkBg = msg.IsDark()
+		palette, _ := theme.ResolvePalette(&m.Cfg.TUI, m.IsDarkBg)
+		m.ApplyTheme(palette)
+		render.RefreshViewport(m)
+		if m.DetailsURL != "" {
+			m.Details.SetContent(render.ResultDetailsContent(m))
+		}
+		return tea.ClearScreen
 
 	case spinner.TickMsg:
 		if m.IsSearching || m.HistoryLoading || m.RulesLoading || m.DetailsLoading {

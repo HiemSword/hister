@@ -1,4 +1,5 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
+// SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -9,15 +10,15 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/render"
 	"github.com/asciimoo/hister/config"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 )
 
-func InputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func InputKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
-	if msg.Type == tea.KeyRunes && !msg.Alt {
+	if len(msg.Text) > 0 && !msg.Mod.Contains(tea.ModAlt) {
 		action = ""
 	}
 
@@ -53,8 +54,12 @@ func InputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		return m.FlashHint(config.ActionOpenResult)
 	}
 
-	var cmd tea.Cmd
+	return updateSearchInput(m, msg)
+}
+
+func updateSearchInput(m *model.Model, msg tea.Msg) tea.Cmd {
 	oldVal := m.TextInput.Value()
+	var cmd tea.Cmd
 	m.TextInput, cmd = m.TextInput.Update(msg)
 	if m.TextInput.Value() != oldVal {
 		m.Limit = model.ResultsPageSize
@@ -64,7 +69,7 @@ func InputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func ResultsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+func ResultsKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	action := m.Keys.Action(msg)
 
 	if cmd, handled := DispatchCommonAction(m, action); handled {

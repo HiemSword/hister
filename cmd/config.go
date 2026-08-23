@@ -1,3 +1,7 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package cmd
 
 import (
@@ -30,7 +34,7 @@ var createConfigCmd = &cobra.Command{
 			if err := writeDefaultConfigFile(fname, cb); err != nil {
 				exit(1, `Failed to create config file: `+err.Error())
 			}
-			fmt.Println(cliSuccessStyle.Render("✓") + " Config file created: " + cliInfoStyle.Render(fname))
+			cliPrintln(cliSuccessStyle.Render("✓") + " Config file created: " + cliInfoStyle.Render(fname))
 		} else {
 			fmt.Print(string(cb))
 		}

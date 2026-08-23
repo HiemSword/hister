@@ -1,13 +1,13 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
+// SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 package model
 
 import (
-	"fmt"
+	"image/color"
 	"math/rand"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -21,15 +21,14 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/gorilla/websocket"
-	"github.com/muesli/termenv"
 	"github.com/rs/zerolog/log"
 )
 
@@ -68,7 +67,6 @@ type Model struct {
 
 	// Viewport line tracking
 	LineOffsets         []int
-	TotalLines          int
 	TabTargets          []HintRegion
 	WorkspaceTargets    []WorkspaceTarget
 	WorkspaceSelectionY int
@@ -92,6 +90,9 @@ type Model struct {
 
 	// Rendering
 	Styles theme.Styles
+	// Declarative terminal colors consumed by Bubble Tea's View.
+	BackgroundColor color.Color
+	ForegroundColor color.Color
 
 	// Dialogs and overlays
 	DialogMsg       string
@@ -120,7 +121,6 @@ type Model struct {
 
 	// Terminal background, queried asynchronously by Bubble Tea.
 	IsDarkBg bool
-	BgSet    bool
 
 	// Clickable suggestion
 	SuggestionHeight int
@@ -190,7 +190,9 @@ type Model struct {
 
 func InitialModel(cfg *config.Config) *Model {
 	theme.LoadUserThemes(cfg.TUI.ThemesDir)
-	isDarkBg := termenv.HasDarkBackground()
+	// Start with dark defaults; Bubble Tea reports the actual terminal
+	// background immediately after startup without blocking terminal I/O.
+	isDarkBg := true
 	palette, name := theme.ResolvePalette(&cfg.TUI, isDarkBg)
 	st := theme.BuildStyles(palette)
 
@@ -236,6 +238,8 @@ func InitialModel(cfg *config.Config) *Model {
 		WsChan:             make(chan tea.Msg, 10),
 		WsDone:             make(chan struct{}),
 		Styles:             st,
+		BackgroundColor:    lipgloss.Color(palette.Base00),
+		ForegroundColor:    lipgloss.Color(palette.Base05),
 		ThemeName:          name,
 		ThemePickerMode:    cfg.TUI.ColorScheme,
 		AddInputs:          addInputs,
@@ -254,18 +258,22 @@ func InitialModel(cfg *config.Config) *Model {
 		}
 		m.RulesPatternInputs[section.ID] = newInput(section.Placeholder, 200, 40, st)
 	}
-	m.Details = viewport.New(72, 18)
-	m.Workspace = viewport.New(80, 20)
+	m.Details = viewport.New(viewport.WithWidth(72), viewport.WithHeight(18))
+	m.Details.SoftWrap = true
+	m.Details.FillHeight = true
+	m.Workspace = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	m.Workspace.FillHeight = true
 	if m.ThemePickerMode == "" {
 		m.ThemePickerMode = "auto"
 	}
-	m.SetTerminalBg(palette.Base00)
 	return m
 }
 
 func (m *Model) ApplyTheme(p theme.Palette) {
 	m.Styles = theme.BuildStyles(p)
 	m.ThemeName = p.Name
+	m.BackgroundColor = lipgloss.Color(p.Base00)
+	m.ForegroundColor = lipgloss.Color(p.Base05)
 	applyInputStyles(&m.TextInput, m.Styles)
 	for i := range m.AddInputs {
 		applyInputStyles(&m.AddInputs[i], m.Styles)
@@ -280,7 +288,6 @@ func (m *Model) ApplyTheme(p theme.Palette) {
 	applyInputStyles(&m.LabelInput, m.Styles)
 	m.Spinner.Style = m.Styles.Spin
 	applyHelpStyles(&m.Help, m.Styles)
-	m.SetTerminalBg(p.Base00)
 }
 
 func applyHelpStyles(h *help.Model, st theme.Styles) {
@@ -298,8 +305,8 @@ func (m *Model) ScrollToSelected() {
 		return
 	}
 	target := m.LineOffsets[m.SelectedIdx]
-	vpH := m.Viewport.Height
-	curY := m.Viewport.YOffset
+	vpH := m.Viewport.Height()
+	curY := m.Viewport.YOffset()
 	if target < curY {
 		m.Viewport.SetYOffset(target)
 	}
@@ -548,7 +555,6 @@ func (m *Model) StartDrag(x, y int) {
 }
 
 func (m *Model) Close() {
-	m.ResetTerminalBg()
 	close(m.WsDone)
 }
 
@@ -774,37 +780,28 @@ func newInput(placeholder string, charLimit int, width int, st theme.Styles) tex
 	inp := textinput.New()
 	inp.Placeholder = placeholder
 	inp.CharLimit = charLimit
-	inp.Width = width
+	inp.SetWidth(width)
 	inp.Prompt = ""
-	inp.PlaceholderStyle = st.Placeholder
+	applyInputStyles(&inp, st)
 	return inp
 }
 
 func applyInputStyles(inp *textinput.Model, st theme.Styles) {
-	inp.PlaceholderStyle = st.Placeholder
-	inp.CompletionStyle = st.Placeholder
-	inp.Cursor.Style = lipgloss.NewStyle().Foreground(st.PromptActive.GetForeground())
+	s := inp.Styles()
+	s.Focused.Placeholder = st.Placeholder
+	s.Focused.Suggestion = st.Placeholder
+	s.Blurred.Placeholder = st.Placeholder
+	s.Blurred.Suggestion = st.Placeholder
+	s.Cursor.Color = st.PromptActive.GetForeground()
+	inp.SetStyles(s)
 }
 
 func applyTextareaStyles(input *textarea.Model, st theme.Styles) {
-	input.FocusedStyle.Placeholder = st.Placeholder
-	input.BlurredStyle.Placeholder = st.Placeholder
-	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	input.BlurredStyle.CursorLine = lipgloss.NewStyle()
-	input.Cursor.Style = lipgloss.NewStyle().Foreground(st.PromptActive.GetForeground())
-}
-
-func (m *Model) SetTerminalBg(hex string) {
-	if hex == "" {
-		return
-	}
-	fmt.Fprintf(os.Stderr, "\033]11;%s\a", hex)
-	m.BgSet = true
-}
-
-func (m *Model) ResetTerminalBg() {
-	if m.BgSet {
-		fmt.Fprint(os.Stderr, "\033]111\a")
-		m.BgSet = false
-	}
+	s := input.Styles()
+	s.Focused.Placeholder = st.Placeholder
+	s.Blurred.Placeholder = st.Placeholder
+	s.Focused.CursorLine = lipgloss.NewStyle()
+	s.Blurred.CursorLine = lipgloss.NewStyle()
+	s.Cursor.Color = st.PromptActive.GetForeground()
+	input.SetStyles(s)
 }

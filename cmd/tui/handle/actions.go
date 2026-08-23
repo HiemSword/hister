@@ -5,8 +5,6 @@
 package handle
 
 import (
-	"fmt"
-	"os"
 	"strings"
 
 	"github.com/asciimoo/hister/cmd/tui/model"
@@ -15,8 +13,7 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 
-	osc52 "github.com/aymanbagabas/go-osc52/v2"
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 )
@@ -120,11 +117,7 @@ func copySelectedURL(m *model.Model) tea.Cmd {
 	if u == "" {
 		return m.Notify("Nothing selected")
 	}
-	copyCmd := func() tea.Msg {
-		fmt.Fprint(os.Stderr, osc52.New(u))
-		return nil
-	}
-	return tea.Batch(copyCmd, m.Notify("URL copied"), m.FlashHint(config.ActionCopyResult))
+	return tea.Batch(tea.SetClipboard(u), m.Notify("URL copied"), m.FlashHint(config.ActionCopyResult))
 }
 
 func OpenDetails(m *model.Model) tea.Cmd {

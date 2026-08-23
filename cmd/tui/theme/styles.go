@@ -4,7 +4,11 @@
 
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 type Styles struct {
 	// Layout chrome
@@ -37,9 +41,9 @@ type Styles struct {
 	Help   lipgloss.Style
 
 	// Overlay border colors
-	DialogBorder lipgloss.Color
-	HelpBorder   lipgloss.Color
-	ThemeBorder  lipgloss.Color
+	DialogBorder color.Color
+	HelpBorder   color.Color
+	ThemeBorder  color.Color
 
 	// Status / hints
 	Conn         lipgloss.Style
@@ -91,7 +95,7 @@ type Styles struct {
 }
 
 func BuildStyles(p Palette) Styles {
-	c := func(hex string) lipgloss.Color { return lipgloss.Color(hex) }
+	c := func(hex string) color.Color { return lipgloss.Color(hex) }
 
 	return Styles{
 		Brand:        lipgloss.NewStyle().Foreground(c(p.Base0D)).Bold(true),

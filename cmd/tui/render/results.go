@@ -1,4 +1,5 @@
 // SPDX-FileContributor: FlameFlag <github@flameflag.dev>
+// SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -12,13 +13,13 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	smodel "github.com/asciimoo/hister/server/model"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func Results(m *model.Model) string {
 	documents := m.VisibleDocuments()
 	if m.Results == nil || (len(documents) == 0 && len(m.Results.History) == 0) {
-		m.LineOffsets, m.TotalLines = nil, 0
+		m.LineOffsets = nil
 		if m.IsSearching {
 			return m.Styles.Gray.Render("  " + m.Spinner.View() + " searching…")
 		}
@@ -31,7 +32,7 @@ func Results(m *model.Model) string {
 	var lineOffsets []int
 	currentLine, currentIdx := 0, 0
 
-	w := max(1, m.Viewport.Width-3)
+	w := max(1, m.Viewport.Width()-3)
 	contentW := max(1, w-2)
 	style := lipgloss.NewStyle().MaxWidth(w)
 
@@ -106,7 +107,6 @@ func Results(m *model.Model) string {
 			item = style.Render(m.Styles.Item.Render(content))
 		}
 		items = append(items, item)
-		currentLine += lipgloss.Height(item) + 1
 	}
 
 	output := strings.Join(items, "\n\n")
@@ -116,13 +116,12 @@ func Results(m *model.Model) string {
 		for i := range lineOffsets {
 			lineOffsets[i] += suggH
 		}
-		currentLine += suggH
 		output = sugg + "\n\n" + output
 		m.SuggestionHeight = suggH
 	} else {
 		m.SuggestionHeight = 0
 	}
-	m.LineOffsets, m.TotalLines = lineOffsets, currentLine
+	m.LineOffsets = lineOffsets
 	return output
 }
 
@@ -200,25 +199,20 @@ func Document(m *model.Model, d *document.Document, sel bool, contentW int) stri
 }
 
 func Scrollbar(m *model.Model) string {
-	maxScroll := m.TotalLines - m.Viewport.Height
-	pct := 0.0
-	if maxScroll > 0 {
-		pct = float64(m.Viewport.YOffset) / float64(maxScroll)
-	}
-	pct = max(0, min(1, pct))
-	thumbPos := int(pct * float64(m.Viewport.Height-1))
+	pct := m.Viewport.ScrollPercent()
+	thumbPos := int(pct * float64(m.Viewport.Height()-1))
 
 	thumbChar := m.Styles.Thumb.Render("█")
 	trackChar := m.Styles.Track.Render("│")
 
 	var sb strings.Builder
-	for i := 0; i < m.Viewport.Height; i++ {
+	for i := 0; i < m.Viewport.Height(); i++ {
 		if i == thumbPos {
 			sb.WriteString(thumbChar)
 		} else {
 			sb.WriteString(trackChar)
 		}
-		if i < m.Viewport.Height-1 {
+		if i < m.Viewport.Height()-1 {
 			sb.WriteString("\n")
 		}
 	}
