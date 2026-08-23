@@ -231,7 +231,7 @@ hister search
 - **Responsive preview pane**: Read results beside the result list on wide terminals; smaller terminals switch the preview to full width
 - **Semantic search**: Toggle hybrid keyword/semantic results when semantic search is enabled
 - **Theming**: Built-in color themes with interactive picker (press `ctrl+t`)
-- **Settings overlay**: Edit keybindings interactively (press `ctrl+s`)
+- **Settings overlay**: Change appearance mode or edit keybindings interactively (press `ctrl+s`)
 - **Responsive workspaces**: Every tab scrolls and adapts to the terminal size
 - **Contextual help and feedback**: Footer shortcuts match the active tab, while notices confirm actions
 
@@ -259,7 +259,7 @@ The TUI uses the following keybindings by default:
 | `l`          | edit_label      | Edit the selected document's label                   |
 | `ctrl+d`     | delete_result   | Delete the selected item                             |
 | `ctrl+t`     | toggle_theme    | Open the interactive theme picker                    |
-| `ctrl+s`     | toggle_settings | Open the keybinding editor overlay                   |
+| `ctrl+s`     | toggle_settings | Open appearance and keybinding settings              |
 | `ctrl+o`     | toggle_sort     | Toggle domain-based sorting for search results       |
 | `ctrl+e`     | toggle_semantic | Toggle semantic search when enabled in server config |
 | `alt+1`      | tab_search      | Switch to the Search tab                             |
@@ -279,6 +279,11 @@ result list and the preview. Arrow keys or `j`/`k` then navigate the focused
 side. Clicking or scrolling either side focuses it. Press `v`, `esc`, or the
 `×` in the preview header to close it.
 
+Search input and result navigation are separate focus modes. While the search
+field is focused, printable keys edit the query and the footer only shows input
+actions. Press `down` or `tab`, or scroll/click inside the results, to focus the
+result list; result shortcuts such as `y` and `v` then become available.
+
 ### Customizing TUI
 
 TUI settings are stored in a separate `tui.yaml` file alongside your main config file. This file is automatically created with default values when you first run `hister search`.
@@ -291,7 +296,7 @@ On a typical Linux setup the path is `~/.config/hister/tui.yaml`. On other platf
 # Theme settings
 dark_theme: 'tokyonight'
 light_theme: 'catppuccin-latte'
-color_scheme: 'auto'
+color_scheme: 'terminal'
 # themes_dir: "/path/to/custom/themes"  # optional
 
 # TUI keybindings
@@ -311,6 +316,13 @@ hotkeys:
   # ... and all other TUI keybindings
 ```
 
+`terminal` is the default appearance. It leaves your terminal background and
+normal text color untouched and uses your terminal's ANSI palette for accents.
+Use `auto` to select the configured dark or light Hister theme based on the
+terminal background, or choose `dark` or `light` explicitly. Press `ctrl+s`
+and select **Appearance** to cycle these modes from Settings; `ctrl+t` opens the
+full theme picker.
+
 #### Available TUI Actions
 
 - `quit` - Exit the TUI application
@@ -323,7 +335,7 @@ hotkeys:
 - `edit_label` - Edit the selected document label
 - `delete_result` - Delete selected entry from index
 - `toggle_theme` - Open theme picker
-- `toggle_settings` - Open keybinding editor
+- `toggle_settings` - Open appearance and keybinding settings
 - `toggle_sort` - Toggle sorting mode
 - `toggle_semantic` - Toggle semantic search
 - `tab_search`/`tab_history`/`tab_rules`/`tab_add` - Switch tabs
