@@ -1,5 +1,143 @@
 # Changelog
 
+## v0.18.0
+
+### New Features
+
+#### Search Suggestions and Sorting
+
+The web search box now suggests matching queries from search history, recent
+searches, aliases, fields, sort options, and facet values. Facet suggestions
+show result counts. The panel supports keyboard and pointer use, can be resized,
+and remembers its height.
+
+A shared server schema keeps fields, facets, values, and sort options consistent
+across search clients. Queries can use `sort:relevance`, `sort:date`,
+`sort:visits`, or `sort:domain`. Prefix the value with a minus sign to reverse
+the order, as in `sort:-date`.
+
+#### Social and Discussion Extractors
+
+New Twitter, Bluesky, Reddit, and Discourse extractors preserve useful post,
+comment, reply, author, date, and reaction data. Twitter and Bluesky can split
+feeds and threads into separate post documents. Twitter also expands known
+shortened links to their original destinations.
+
+Documents can now include JSON LD metadata. A new extractor SDK and registry
+define explicit results, capabilities, and optional context support.
+
+#### Terminal Result Details
+
+The terminal interface now has responsive workspaces and a readable result
+details pane. Wide terminals show the list and preview together. Narrow
+terminals use the full workspace. Text layout accounts for terminal cell width.
+
+#### Local File Format Imports
+
+`hister import file` can now import PDF, DOCX, Markdown, Org mode, valid UTF 8
+text, and other supported local formats. It accepts individual files or
+directories. Extraction runs in the command line process and creates remote
+snapshots, so the server does not need access to the source files.
+
+#### Service and Browser Imports
+
+Hister can now import incrementally from Linkding, Readeck, and wallabag. Stored
+content is used when available, with a page download fallback. Browser imports
+can start at `--start-date`.
+
+#### Bulk Document Updates
+
+The new `hister update` command changes the owner, label, title, or language of
+documents matched by a search query. It supports dry runs, asks for
+confirmation, reports conflicts, and keeps file ownership rules intact.
+
+#### Complete History Timeline
+
+The history page now shows counts for all indexed or opened history. Recent
+days and older months are grouped for easier browsing, with daily details for a
+selected period.
+
+#### Persistent Web Sessions
+
+Web sessions are now stored in the configured SQL database. They survive server
+restarts, use rolling expiration, and are revoked at logout. Cookie security
+follows the configured server URL.
+
+#### Structured MCP Results
+
+The MCP endpoint now targets protocol version `2025-06-18` and defines output
+schemas for every tool. Results separate trusted metadata from untrusted source
+content, remove invisible control characters, and include safe handling
+guidance. Search callers can select full document fields.
+
+### Enhancements
+
+1. **Search interface**: search duration is visible, index statistics are
+   clickable, empty indexes show quick start help, errors are clearer, and
+   recent searches are easier to identify and clear.
+2. **Query history**: results promoted by query history are marked and can be
+   forgotten for that query. Existing rules remain intact.
+3. **Command line**: help now groups commands by scope. `check-update` reports
+   new releases, and `crawl urls` can filter or count stored crawl URLs.
+4. **URL input**: `hister index --input` accepts a file or standard input and
+   creates a persistent job.
+5. **Files**: watched directories can apply labels. Cleanup removes local
+   documents that no longer match configured directories. File previews verify
+   ownership and directory rules.
+6. **Batch imports**: clients split batches at the configured request limit and
+   report documents that are too large.
+7. **Browser extension**: the extension supports access tokens and copied
+   browser sessions. It refreshes changed cookies after authentication failures
+   and submits pending page changes when a tab closes.
+8. **Web interface and docs**: the header is more compact, the initial color
+   scheme is configurable, accessibility is improved, and documentation now
+   has search and clearer navigation.
+9. **Operations**: profiling has an explicit setting. Container builds are
+   smaller, and release images use Buildx Bake for supported architectures.
+10. **Crawler rendering**: capture delay is shared by rendered backends and is
+    now supported by Chromedp.
+11. **Terminal compatibility**: command output and the TUI now use Charm v2,
+    respect terminal color support, and preserve custom hotkeys.
+12. **Dependencies**: Go modules, npm packages, Nix inputs, container bases, and
+    GitHub Actions were updated.
+
+### Bug Fixes
+
+1. Failed embedding jobs no longer starve later queued documents.
+2. Index metadata access is safe during concurrent indexing.
+3. Batch requests respect the server body limit and report oversized documents.
+4. Field specific alternatives work correctly, and URL wildcard matching
+   ignores letter case.
+5. Browser imports count URLs correctly and handle empty history databases.
+6. OAuth provider scopes are combined with default scopes.
+7. Copied extension sessions use consistent expiry, and the background script
+   works in browsers that require a classic script.
+8. Sensitive content matches are no longer exposed in debug logs.
+9. File indexing continues after an invalid symbolic link.
+10. Opened history responses are decoded correctly.
+11. Mastodon pages without a detected post are no longer stored.
+12. Optional versioning rules remain optional, and prioritizing a result keeps
+    the full rule set intact.
+13. The middle pointer button still opens results while suggestions are visible.
+14. Database conflict clauses now qualify column names correctly.
+15. The configured color theme is applied before the page becomes visible.
+
+### Backward Compatibility Notes
+
+The following changes require attention when upgrading from v0.17.0:
+
+1. **Login sessions**: web users and extensions that copied a browser session
+   must sign in once after upgrading. Access tokens are unchanged.
+2. **File preview API**: `/api/file` now accepts a document `id` instead of an
+   absolute `path`. Search and history results include this identifier.
+3. **MCP output**: tool results now use schema version `1.0`. Untrusted source
+   values are under `structuredContent.untrusted_content`. Text output contains
+   the same JSON and a security notice.
+4. **Extractor implementations**: custom extractors must use the new SDK result
+   constructors, capability declarations, and registry.
+5. **URL list input**: `hister index --url-list` remains as a hidden deprecated
+   alias. Use `hister index --input`; it also accepts `-` for standard input.
+
 ## v0.17.0
 
 ### New Features
