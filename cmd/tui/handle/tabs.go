@@ -65,6 +65,8 @@ func HistoryKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 		return m.FlashHint(config.ActionOpenResult)
+	case config.ActionCopyResult:
+		return copySelectedURL(m)
 	case config.ActionDeleteResult:
 		if m.HistoryIdx >= 0 && m.HistoryIdx < len(m.HistoryItems) {
 			h := m.HistoryItems[m.HistoryIdx]

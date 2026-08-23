@@ -220,44 +220,57 @@ hister search
 
 - **Multi-tab interface**: Search, History, Rules, and Add tabs
 - **Mouse support**: Scroll with mouse wheel, click to select, right-click for context menu
+- **Result actions**: Copy URLs, read full previews, edit labels, prioritize, or delete
+- **Responsive preview pane**: Read results beside the result list on wide terminals; smaller terminals switch the preview to full width
+- **Semantic search**: Toggle hybrid keyword/semantic results when semantic search is enabled
 - **Theming**: Built-in color themes with interactive picker (press `ctrl+t`)
 - **Settings overlay**: Edit keybindings interactively (press `ctrl+s`)
-- **Context menu**: Right-click on results for quick actions (open, delete, prioritize)
+- **Responsive workspaces**: Every tab scrolls and adapts to the terminal size
+- **Contextual help and feedback**: Footer shortcuts match the active tab, while notices confirm actions
 
 ### Tabs
 
 - **Search** (Alt+1): Main search interface
 - **History** (Alt+2): View your recent search history
 - **Rules** (Alt+3): Manage skip, priority, versioning, and alias rules
-- **Add** (Alt+4): Manually add URLs to the index
+- **Add** (Alt+4): Manually add URLs, titles, and multiline text to the index
 
 ### TUI Keybindings
 
 The TUI uses the following keybindings by default:
 
-| Key          | Action          | Description                                    |
-| ------------ | --------------- | ---------------------------------------------- |
-| `ctrl+c`     | quit            | Exit the TUI                                   |
-| `f1`         | toggle_help     | Show/hide keybindings help overlay             |
-| `tab`, `esc` | toggle_focus    | Switch between search input and results list   |
-| `up`, `k`    | scroll_up       | Navigate up in results                         |
-| `down`, `j`  | scroll_down     | Navigate down in results                       |
-| `enter`      | open_result     | Open the selected result in your browser       |
-| `ctrl+d`     | delete_result   | Delete the selected result from the index      |
-| `ctrl+t`     | toggle_theme    | Open the interactive theme picker              |
-| `ctrl+s`     | toggle_settings | Open the keybinding editor overlay             |
-| `ctrl+o`     | toggle_sort     | Toggle domain-based sorting for search results |
-| `alt+1`      | tab_search      | Switch to the Search tab                       |
-| `alt+2`      | tab_history     | Switch to the History tab                      |
-| `alt+3`      | tab_rules       | Switch to the Rules tab                        |
-| `alt+4`      | tab_add         | Switch to the Add tab                          |
+| Key          | Action          | Description                                          |
+| ------------ | --------------- | ---------------------------------------------------- |
+| `ctrl+c`     | quit            | Exit the TUI                                         |
+| `f1`         | toggle_help     | Show/hide the complete keybindings help overlay      |
+| `tab`, `esc` | toggle_focus    | Change focus or return to the previous workspace     |
+| `up`, `k`    | scroll_up       | Navigate up                                          |
+| `down`, `j`  | scroll_down     | Navigate down                                        |
+| `enter`      | open_result     | Open, edit, or submit the focused item               |
+| `y`          | copy_result     | Copy the selected URL using the terminal clipboard   |
+| `v`          | toggle_preview  | Show or hide the readable preview pane               |
+| `l`          | edit_label      | Edit the selected document's label                   |
+| `ctrl+d`     | delete_result   | Delete the selected item                             |
+| `ctrl+t`     | toggle_theme    | Open the interactive theme picker                    |
+| `ctrl+s`     | toggle_settings | Open the keybinding editor overlay                   |
+| `ctrl+o`     | toggle_sort     | Toggle domain-based sorting for search results       |
+| `ctrl+e`     | toggle_semantic | Toggle semantic search when enabled in server config |
+| `alt+1`      | tab_search      | Switch to the Search tab                             |
+| `alt+2`      | tab_history     | Switch to the History tab                            |
+| `alt+3`      | tab_rules       | Switch to the Rules tab                              |
+| `alt+4`      | tab_add         | Switch to the Add tab                                |
 
 ### Mouse Controls
 
 - **Left-click**: Select results or open tabs
-- **Right-click**: Open context menu (open, delete, prioritize)
-- **Scroll wheel**: Navigate through results
+- **Right-click**: Open the result menu (open, copy, details, label, prioritize, delete)
+- **Scroll wheel**: Navigate results or scroll the active workspace/overlay
 - **Scrollbar drag**: Quick scroll through long result lists
+
+When a preview is open on a wide terminal, use `tab` to move focus between the
+result list and the preview. Arrow keys or `j`/`k` then navigate the focused
+side. Clicking or scrolling either side focuses it. Press `v`, `esc`, or the
+`×` in the preview header to close it.
 
 ### Customizing TUI
 
@@ -280,6 +293,10 @@ hotkeys:
   ctrl+t: 'toggle_theme'
   ctrl+s: 'toggle_settings'
   ctrl+o: 'toggle_sort'
+  ctrl+e: 'toggle_semantic'
+  y: 'copy_result'
+  v: 'toggle_preview'
+  l: 'edit_label'
   alt+1: 'tab_search'
   alt+2: 'tab_history'
   alt+3: 'tab_rules'
@@ -291,13 +308,17 @@ hotkeys:
 
 - `quit` - Exit the TUI application
 - `toggle_help` - Show/hide the help overlay
-- `toggle_focus` - Switch between input and results views
+- `toggle_focus` - Change focus or return to the previous workspace
 - `scroll_up`/`scroll_down` - Move selection up/down
 - `open_result` - Open selected URL in browser
+- `copy_result` - Copy the selected URL
+- `toggle_preview` - Show/hide selected result details
+- `edit_label` - Edit the selected document label
 - `delete_result` - Delete selected entry from index
 - `toggle_theme` - Open theme picker
 - `toggle_settings` - Open keybinding editor
 - `toggle_sort` - Toggle sorting mode
+- `toggle_semantic` - Toggle semantic search
 - `tab_search`/`tab_history`/`tab_rules`/`tab_add` - Switch tabs
 
 Note: After modifying `tui.yaml`, restart the `hister search` command to apply changes.

@@ -95,7 +95,7 @@ func renderURL(st theme.Styles, rawURL, domain string, maxW int) string {
 }
 
 func isLocalHost(host string) bool {
-	h := strings.SplitN(host, ":", 2)[0]
+	h, _, _ := strings.Cut(host, ":")
 	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
 

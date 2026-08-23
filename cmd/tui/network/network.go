@@ -69,7 +69,7 @@ func ConnectWebSocket(wsURL, origin, token string, wsChan chan tea.Msg, wsDone c
 					if err := json.Unmarshal(data, &res); err != nil {
 						continue
 					}
-					if len(res.Documents) == 0 && len(res.History) == 0 {
+					if len(res.Documents) == 0 && len(res.History) == 0 && len(res.SemanticHits) == 0 {
 						res = &indexer.Results{}
 					}
 					select {

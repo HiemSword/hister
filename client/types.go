@@ -32,3 +32,11 @@ type PreviewResponse struct {
 	VersionCount int            `json:"version_count"`
 	Meta         map[string]any `json:"meta"`
 }
+
+// ServerConfig contains the search capabilities advertised by /api/config
+// that command-line clients need at runtime.
+type ServerConfig struct {
+	SemanticEnabled     bool    `json:"semanticEnabled"`
+	SemanticWeight      float64 `json:"semanticWeight"`
+	SimilarityThreshold float64 `json:"similarityThreshold"`
+}

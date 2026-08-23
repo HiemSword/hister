@@ -32,6 +32,28 @@ func TestFetchPreview(t *testing.T) {
 	}
 }
 
+func TestFetchConfigReadsServerSemanticCapabilities(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/config" || r.Method != http.MethodGet {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"semanticEnabled":     true,
+			"semanticWeight":      0.65,
+			"similarityThreshold": 0.82,
+		})
+	}))
+	defer server.Close()
+
+	serverConfig, err := New(server.URL).FetchConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !serverConfig.SemanticEnabled || serverConfig.SemanticWeight != 0.65 || serverConfig.SimilarityThreshold != 0.82 {
+		t.Fatalf("server config = %#v", serverConfig)
+	}
+}
+
 func TestSaveRulesIncludesVersioning(t *testing.T) {
 	var got url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

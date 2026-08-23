@@ -9,8 +9,10 @@ import (
 	"math/rand"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui/component"
@@ -33,17 +35,32 @@ import (
 
 type Model struct {
 	// Core UI components
-	TextInput textinput.Model
-	Viewport  viewport.Model
-	Spinner   spinner.Model
-	Help      help.Model
-	Keys      component.KeyMap
-	Workspace viewport.Model
-	State     ViewState
-	PrevState ViewState
-	Cfg       *config.Config
-	Client    *client.Client
-	Results   *indexer.Results
+	TextInput    textinput.Model
+	Viewport     viewport.Model
+	Spinner      spinner.Model
+	Help         help.Model
+	Keys         component.KeyMap
+	Details      viewport.Model
+	Workspace    viewport.Model
+	State        ViewState
+	PrevState    ViewState
+	overlayStack []ViewState
+	Cfg          *config.Config
+	Client       *client.Client
+	Results      *indexer.Results
+
+	// Readable preview pane. DetailsURL is also the pane-open flag so modal
+	// dialogs can retain the split view behind them.
+	DetailsURL          string
+	DetailsHintTitle    string
+	DetailsPreview      *client.PreviewResponse
+	DetailsErr          error
+	DetailsLoading      bool
+	DetailsFocused      bool
+	DetailsRequestID    uint64
+	DetailsPendingURL   string
+	DetailsPendingReady bool
+	DetailsFetching     bool
 
 	// Dimensions and readiness
 	Width, Height int
@@ -64,10 +81,14 @@ type Model struct {
 	WsReady bool
 
 	// Selection and search state
-	SelectedIdx int
-	Limit       int
-	IsSearching bool
-	SortMode    string // "" for relevance, "domain" for domain
+	SelectedIdx       int
+	Limit             int
+	IsSearching       bool
+	SortMode          string // "" for relevance, "domain" for domain
+	SemanticOn        bool
+	SemanticEnabled   bool
+	SemanticThreshold float64
+	SemanticWeight    float64
 
 	// Rendering
 	Styles theme.Styles
@@ -160,6 +181,8 @@ type Model struct {
 	PrioritizeURL    string
 	PrioritizeInput  textinput.Model
 	PrioritizeBtnIdx int // 0=Cancel, 1=Confirm
+	LabelInput       textinput.Model
+	LabelURL         string
 
 	// Tips rotation
 	TipIdx int
@@ -222,6 +245,7 @@ func InitialModel(cfg *config.Config) *Model {
 		RulesFormFocus:     RulesFocusList, // start on list
 		RulesEditingIdx:    -1,
 		PrioritizeInput:    newInput("URL pattern...", 500, 40, st),
+		LabelInput:         newInput("Label (empty clears it)", 200, 50, st),
 		TipIdx:             rand.Intn(len(SearchTips)),
 	}
 	for _, section := range RulesSections {
@@ -230,6 +254,7 @@ func InitialModel(cfg *config.Config) *Model {
 		}
 		m.RulesPatternInputs[section.ID] = newInput(section.Placeholder, 200, 40, st)
 	}
+	m.Details = viewport.New(72, 18)
 	m.Workspace = viewport.New(80, 20)
 	if m.ThemePickerMode == "" {
 		m.ThemePickerMode = "auto"
@@ -252,6 +277,7 @@ func (m *Model) ApplyTheme(p theme.Palette) {
 	applyInputStyles(&m.RulesAliasKeyInput, m.Styles)
 	applyInputStyles(&m.RulesAliasValInput, m.Styles)
 	applyInputStyles(&m.PrioritizeInput, m.Styles)
+	applyInputStyles(&m.LabelInput, m.Styles)
 	m.Spinner.Style = m.Styles.Spin
 	applyHelpStyles(&m.Help, m.Styles)
 	m.SetTerminalBg(p.Base00)
@@ -335,11 +361,63 @@ func (m *Model) GetSelectedDocument() *document.Document {
 	return nil
 }
 
+// VisibleDocuments merges keyword and semantic-only results into the order
+// presented by the TUI. It deliberately returns a new slice and never mutates
+// the server response, which keeps selection and re-rendering deterministic.
 func (m *Model) VisibleDocuments() []*document.Document {
 	if m.Results == nil {
 		return nil
 	}
-	return slices.Clone(m.Results.Documents)
+	documents := slices.Clone(m.Results.Documents)
+	if !m.SemanticOn || len(m.Results.SemanticHits) == 0 {
+		return documents
+	}
+
+	seen := make(map[string]bool, len(documents))
+	byID := make(map[string]*document.Document, len(documents))
+	for _, doc := range documents {
+		seen[doc.URL] = true
+		byID[document.GetDocID(doc.UserID, doc.URL)] = doc
+	}
+	semanticScores := make(map[string]float64, len(m.Results.SemanticHits))
+	for _, hit := range m.Results.SemanticHits {
+		if hit.Document != nil {
+			semanticScores[hit.Document.URL] = hit.Similarity
+			if !seen[hit.Document.URL] {
+				documents = append(documents, hit.Document)
+				seen[hit.Document.URL] = true
+				byID[document.GetDocID(hit.Document.UserID, hit.Document.URL)] = hit.Document
+			}
+		}
+		if doc := byID[hit.DocID]; doc != nil {
+			semanticScores[doc.URL] = hit.Similarity
+		}
+	}
+	if m.SortMode == "domain" {
+		sort.SliceStable(documents, func(i, j int) bool {
+			if documents[i].Domain == documents[j].Domain {
+				return documents[i].Score > documents[j].Score
+			}
+			return documents[i].Domain < documents[j].Domain
+		})
+		return documents
+	}
+
+	maxKeywordScore := 1.0
+	for _, doc := range documents {
+		maxKeywordScore = max(maxKeywordScore, doc.Score)
+	}
+	weight := m.SemanticWeight
+	if weight <= 0 || weight >= 1 {
+		weight = 0.4
+	}
+	combinedScore := func(doc *document.Document) float64 {
+		return (1-weight)*(doc.Score/maxKeywordScore) + weight*semanticScores[doc.URL]
+	}
+	sort.SliceStable(documents, func(i, j int) bool {
+		return combinedScore(documents[i]) > combinedScore(documents[j])
+	})
+	return documents
 }
 
 func (m *Model) SortedSettingsItems() []SettingsItem {
@@ -377,8 +455,7 @@ func (m *Model) RulesSectionLen(section int) int {
 }
 
 func (m *Model) OpenDeleteDialog(title, label string, returnTab int, confirm func() tea.Cmd) {
-	m.OverlayOffX, m.OverlayOffY = 0, 0
-	m.State = StateDialog
+	m.OpenOverlay(StateDialog)
 	m.DialogMsg = title
 	m.DialogURL = label
 	m.DialogBtnIdx = 0
@@ -419,7 +496,25 @@ func (m *Model) OpenThemePicker() {
 func (m *Model) DismissOverlay() {
 	m.IsDragging = false
 	m.OverlayOffX, m.OverlayOffY = 0, 0
-	m.State = m.PrevState
+	if len(m.overlayStack) == 0 {
+		m.State = m.PrevState
+		return
+	}
+	last := len(m.overlayStack) - 1
+	m.State = m.overlayStack[last]
+	m.overlayStack = m.overlayStack[:last]
+	if len(m.overlayStack) > 0 {
+		m.PrevState = m.overlayStack[len(m.overlayStack)-1]
+	} else {
+		m.PrevState = m.State
+	}
+}
+
+// SetBaseState leaves the overlay hierarchy and establishes a new root state.
+func (m *Model) SetBaseState(state ViewState) {
+	m.overlayStack = nil
+	m.State = state
+	m.PrevState = state
 }
 
 // DismissDialog returns to the correct state after closing a dialog.
@@ -427,11 +522,15 @@ func (m *Model) DismissDialog() {
 	m.DismissOverlay()
 	if m.DialogReturnTab >= 0 {
 		m.ActiveTab = m.DialogReturnTab
-		m.State = StateResults
+		m.SetBaseState(StateResults)
 		m.DialogReturnTab = -1
 		return
 	}
-	m.State = StateResults
+	if m.DetailsURL != "" {
+		m.State = StateDetails
+	} else {
+		m.State = StateResults
+	}
 }
 
 func (m *Model) OpenContextMenu(idx, x, y, offX, offY int) {
@@ -451,6 +550,21 @@ func (m *Model) StartDrag(x, y int) {
 func (m *Model) Close() {
 	m.ResetTerminalBg()
 	close(m.WsDone)
+}
+
+func (m *Model) ResetDetails() []int {
+	m.DetailsRequestID++
+	m.DetailsPendingURL = ""
+	m.DetailsPendingReady = false
+	m.DetailsURL = ""
+	m.DetailsHintTitle = ""
+	m.DetailsPreview = nil
+	m.DetailsErr = nil
+	m.DetailsLoading = false
+	m.DetailsFocused = false
+	m.Details.SetContent("")
+	m.Details.GotoTop()
+	return nil
 }
 
 func (m *Model) FocusedRulesInput() *textinput.Model {
@@ -488,6 +602,7 @@ func ScrollIdx(idx *int, delta, minVal, maxVal int) bool {
 // OpenOverlay sets up common overlay state.
 func (m *Model) OpenOverlay(state ViewState) {
 	m.OverlayOffX, m.OverlayOffY = 0, 0
+	m.overlayStack = append(m.overlayStack, m.State)
 	m.PrevState, m.State = m.State, state
 	m.TextInput.Blur()
 }
@@ -605,6 +720,53 @@ func (m *Model) DeleteHistoryEntryCmd(query, url string) tea.Cmd {
 		}
 		items, err := m.Client.FetchHistory()
 		return HistoryFetchedMsg{Items: items, Err: err}
+	}
+}
+
+func (m *Model) UpdateLabelCmd(url, label string) tea.Cmd {
+	return func() tea.Msg {
+		return LabelSavedMsg{URL: url, Label: label, Err: m.Client.UpdateLabel(url, label)}
+	}
+}
+
+func (m *Model) FetchPreviewCmd(urlStr string) tea.Cmd {
+	return func() tea.Msg {
+		preview, err := m.Client.FetchPreview(urlStr)
+		return PreviewFetchedMsg{URL: urlStr, Preview: preview, Err: err}
+	}
+}
+
+const PreviewDebounceDelay = 120 * time.Millisecond
+
+// QueuePreviewCmd coalesces rapid selection changes before a preview request
+// is allowed to start. Preview requests themselves are run one at a time.
+func (m *Model) QueuePreviewCmd(urlStr string) tea.Cmd {
+	m.DetailsRequestID++
+	id := m.DetailsRequestID
+	m.DetailsPendingURL = urlStr
+	m.DetailsPendingReady = false
+	return tea.Tick(PreviewDebounceDelay, func(_ time.Time) tea.Msg {
+		return PreviewDebounceMsg{URL: urlStr, ID: id}
+	})
+}
+
+// StartPendingPreviewCmd starts the latest debounced request when no earlier
+// preview request is still in flight.
+func (m *Model) StartPendingPreviewCmd() tea.Cmd {
+	if m.DetailsFetching || !m.DetailsPendingReady || m.DetailsPendingURL == "" {
+		return nil
+	}
+	urlStr := m.DetailsPendingURL
+	m.DetailsPendingURL = ""
+	m.DetailsPendingReady = false
+	m.DetailsFetching = true
+	return m.FetchPreviewCmd(urlStr)
+}
+
+func (m *Model) FetchServerConfigCmd() tea.Cmd {
+	return func() tea.Msg {
+		serverConfig, err := m.Client.FetchConfig()
+		return ServerConfigFetchedMsg{Config: serverConfig, Err: err}
 	}
 }
 

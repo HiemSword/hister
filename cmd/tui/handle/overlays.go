@@ -131,7 +131,7 @@ func ThemePickerKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		p, _ := theme.ResolvePalette(&m.Cfg.TUI, m.IsDarkBg)
 		m.ApplyTheme(p)
 		render.RefreshViewport(m)
-		m.State = m.PrevState
+		m.DismissOverlay()
 		if m.State == model.StateInput {
 			return m.TextInput.Focus()
 		}
@@ -156,7 +156,7 @@ func SettingsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		m.SettingsEditErr = ""
 	case config.ActionToggleFocus:
 		if key == "esc" {
-			m.State = m.PrevState
+			m.DismissOverlay()
 			if m.State == model.StateInput {
 				return m.TextInput.Focus()
 			}
@@ -233,14 +233,14 @@ func ContextMenuKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		return executeContextMenuAction(m)
 	case config.ActionToggleFocus:
 		if key == "esc" {
-			m.State = m.PrevState
+			m.DismissOverlay()
 		}
 	}
 	return nil
 }
 
 func executeContextMenuAction(m *model.Model) tea.Cmd {
-	m.State = m.PrevState
+	m.DismissOverlay()
 	option, ok := model.MenuOptionAt(m.MenuSelIdx)
 	if !ok {
 		return nil
@@ -253,6 +253,12 @@ func executeContextMenuAction(m *model.Model) tea.Cmd {
 			}
 			return m.PostHistoryCmd(u)
 		}
+	case model.MenuCopy:
+		return copySelectedURL(m)
+	case model.MenuDetails:
+		return OpenDetails(m)
+	case model.MenuLabel:
+		return OpenLabelEditor(m)
 	case model.MenuDelete:
 		if u := m.GetSelectedURL(); u != "" {
 			m.OpenDeleteDialog("Delete Result", u, -1, func() tea.Cmd {
@@ -265,7 +271,7 @@ func executeContextMenuAction(m *model.Model) tea.Cmd {
 			m.PrioritizeInput.SetValue("")
 			m.PrioritizeInput.Focus()
 			m.PrioritizeBtnIdx = 1
-			m.State = model.StatePrioritizeInput
+			m.OpenOverlay(model.StatePrioritizeInput)
 		}
 	}
 	return nil
@@ -283,18 +289,18 @@ func PrioritizeInputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case key == "esc" || (action == config.ActionToggleFocus && key == "esc"):
 		m.PrioritizeInput.Blur()
-		m.State = m.PrevState
+		m.DismissOverlay()
 		return nil
 	case action == config.ActionOpenResult:
 		if m.PrioritizeBtnIdx == 0 {
 			// Cancel
 			m.PrioritizeInput.Blur()
-			m.State = m.PrevState
+			m.DismissOverlay()
 			return nil
 		}
 		pattern := strings.TrimSpace(m.PrioritizeInput.Value())
 		m.PrioritizeInput.Blur()
-		m.State = m.PrevState
+		m.DismissOverlay()
 		if pattern != "" {
 			return m.PrioritizeRuleCmd(pattern)
 		}
@@ -302,5 +308,86 @@ func PrioritizeInputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	m.PrioritizeInput, cmd = m.PrioritizeInput.Update(msg)
+	return cmd
+}
+
+func DetailsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+	action := m.Keys.Action(msg)
+	if msg.String() == "esc" || action == config.ActionTogglePreview {
+		return CloseDetails(m)
+	}
+	if action == config.ActionToggleHelp {
+		m.OpenOverlay(model.StateHelp)
+		return m.FlashHint(action)
+	}
+	if _, isTab := model.TabForAction(action); isTab {
+		return SwitchTab(m, action)
+	}
+	if action == config.ActionToggleFocus {
+		if render.DetailsSplit(m) {
+			m.DetailsFocused = !m.DetailsFocused
+		}
+		return m.FlashHint(action)
+	}
+	if !m.DetailsFocused && render.DetailsSplit(m) {
+		switch action {
+		case config.ActionScrollUp:
+			if m.SelectedIdx > 0 {
+				m.SelectedIdx--
+				render.RefreshAndScroll(m)
+				return ReloadDetails(m)
+			}
+			return nil
+		case config.ActionScrollDown:
+			if m.SelectedIdx < m.GetTotalResults()-1 && m.SelectedIdx+1 != m.Limit {
+				m.SelectedIdx++
+				render.RefreshAndScroll(m)
+				return ReloadDetails(m)
+			}
+			return nil
+		}
+	}
+	switch action {
+	case config.ActionCopyResult:
+		return copySelectedURL(m)
+	case config.ActionEditLabel:
+		return OpenLabelEditor(m)
+	case config.ActionOpenResult:
+		if u := m.GetSelectedURL(); u != "" {
+			if err := browser.OpenURL(u); err != nil {
+				log.Warn().Err(err).Msg("failed to open URL in browser")
+			}
+			return m.PostHistoryCmd(u)
+		}
+	case config.ActionScrollUp:
+		m.Details.ScrollUp(1)
+		return nil
+	case config.ActionScrollDown:
+		m.Details.ScrollDown(1)
+		return nil
+	}
+	var cmd tea.Cmd
+	m.Details, cmd = m.Details.Update(msg)
+	return cmd
+}
+
+func LabelInputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
+	action := m.Keys.Action(msg)
+	if msg.Type == tea.KeyRunes && !msg.Alt {
+		action = ""
+	}
+	if msg.String() == "esc" {
+		m.LabelInput.Blur()
+		return CloseOverlay(m)
+	}
+	if action == config.ActionOpenResult || msg.String() == "enter" {
+		label := strings.TrimSpace(m.LabelInput.Value())
+		url := m.LabelURL
+		m.LabelInput.Blur()
+		m.DismissOverlay()
+		return m.UpdateLabelCmd(url, label)
+	}
+	var cmd tea.Cmd
+	m.LabelInput, cmd = m.LabelInput.Update(msg)
 	return cmd
 }

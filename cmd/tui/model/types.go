@@ -28,27 +28,40 @@ const (
 	StateContextMenu
 	StateSettings
 	StatePrioritizeInput
+	StateDetails
+	StateLabelInput
 )
 
 func (s ViewState) String() string {
-	return []string{"INPUT", "RESULTS", "DIALOG", "HELP", "THEME_PICKER", "CONTEXT_MENU", "SETTINGS", "PRIORITIZE_INPUT"}[s]
+	return []string{"INPUT", "RESULTS", "DIALOG", "HELP", "THEME_PICKER", "CONTEXT_MENU", "SETTINGS", "PRIORITIZE_INPUT", "DETAILS", "LABEL_INPUT"}[s]
 }
 
 // sent over WebSocket to the search server
 type SearchQuery struct {
-	Text      string `json:"text"`
-	Highlight string `json:"highlight"`
-	Limit     int    `json:"limit"`
-	Sort      string `json:"sort,omitempty"`
+	Text              string  `json:"text"`
+	Highlight         string  `json:"highlight"`
+	Limit             int     `json:"limit"`
+	Sort              string  `json:"sort,omitempty"`
+	SemanticEnabled   bool    `json:"semantic_enabled,omitempty"`
+	SemanticThreshold float64 `json:"semantic_threshold,omitempty"`
+	SemanticWeight    float64 `json:"semantic_weight,omitempty"`
 }
 
 // Message types for bubbletea
 type (
-	ResultsMsg          struct{ Results *indexer.Results }
-	ErrMsg              struct{ Err error }
-	WsConnectedMsg      struct{ Conn *websocket.Conn }
-	WsDisconnectedMsg   struct{ Err error }
-	ReconnectMsg        struct{}
+	ResultsMsg             struct{ Results *indexer.Results }
+	ErrMsg                 struct{ Err error }
+	WsConnectedMsg         struct{ Conn *websocket.Conn }
+	WsDisconnectedMsg      struct{ Err error }
+	ReconnectMsg           struct{}
+	ServerConfigFetchedMsg struct {
+		Config *client.ServerConfig
+		Err    error
+	}
+	PreviewDebounceMsg struct {
+		URL string
+		ID  uint64
+	}
 	HintClearMsg        struct{}
 	SettingsErrClearMsg struct{}
 	NoticeClearMsg      struct{ ID uint64 }
@@ -63,6 +76,16 @@ type (
 	AddResultMsg    struct{ Err error }
 	RulesSavedMsg   struct{ Err error }
 	DeleteResultMsg struct{ Err error }
+	LabelSavedMsg   struct {
+		URL   string
+		Label string
+		Err   error
+	}
+	PreviewFetchedMsg struct {
+		URL     string
+		Preview *client.PreviewResponse
+		Err     error
+	}
 )
 
 type HistoryItem = client.HistoryItem
@@ -189,7 +212,19 @@ func RowVPEnd(height int) int { return height - 3 }
 const FixedLayoutRows = 6
 
 const (
+	// DetailsSplitMinWidth is the smallest terminal that can show useful
+	// result and preview columns side by side. Narrower terminals use the same
+	// preview pane full-width.
+	DetailsSplitMinWidth = 88
+	DetailsPaneMinWidth  = 38
+	DetailsPaneMaxWidth  = 68
+)
+
+const (
 	MenuOpen int = iota
+	MenuCopy
+	MenuDetails
+	MenuLabel
 	MenuPrioritize
 	MenuDelete
 )
@@ -201,6 +236,9 @@ type MenuOptionDefinition struct {
 
 var MenuOptions = []MenuOptionDefinition{
 	{ID: MenuOpen, Label: "Open"},
+	{ID: MenuCopy, Label: "Copy URL"},
+	{ID: MenuDetails, Label: "Details"},
+	{ID: MenuLabel, Label: "Edit label"},
 	{ID: MenuPrioritize, Label: "Prioritize"},
 	{ID: MenuDelete, Label: "Delete"},
 }
@@ -234,6 +272,7 @@ var SearchTips = []string{
 	"Tip: Press Tab to focus results",
 	"Tip: Press Ctrl+D to delete a result",
 	"Tip: Sort by domain with Ctrl+O",
+	"Tip: Toggle semantic search with Ctrl+E",
 	"Tip: Press Ctrl+T to change theme",
 	"Tip: Press Ctrl+S to edit keybindings",
 	"Tip: Press F1 for help",

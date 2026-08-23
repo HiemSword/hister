@@ -191,8 +191,7 @@ func shouldRetryEmbeddingError(ctx context.Context, err error) bool {
 		return false
 	}
 
-	var statusErr *embeddingStatusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*embeddingStatusError](err); ok {
 		return statusErr.transient()
 	}
 

@@ -27,6 +27,7 @@ var mouseHandler = mouse.New(mouse.Deps{
 	CloseThemePickerWithRevert: CloseThemePickerWithRevert,
 	PreviewTheme:               previewTheme,
 	ExecuteContextMenuAction:   executeContextMenuAction,
+	ReloadDetails:              ReloadDetails,
 })
 
 func Update(m *model.Model, msg tea.Msg) tea.Cmd {
@@ -45,6 +46,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		for i := range m.RulesPatternInputs {
 			m.RulesPatternInputs[i].Width = max(12, min(48, m.Width-24))
 		}
+		m.LabelInput.Width = max(12, min(64, m.Width-16))
 		m.Workspace.Width = max(1, m.Width-1)
 		m.Workspace.Height = max(1, vpH+2)
 		m.Help.Width = max(1, m.Width-4)
@@ -54,9 +56,15 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			m.Viewport.SetContent("")
 			m.Ready = true
 			render.ResizeSearchViewports(m)
+			if render.DetailsVisible(m) {
+				m.Details.SetContent(render.ResultDetailsContent(m))
+			}
 			return tea.ClearScreen
 		}
 		render.ResizeSearchViewports(m)
+		if render.DetailsVisible(m) {
+			m.Details.SetContent(render.ResultDetailsContent(m))
+		}
 		render.RefreshAndScroll(m)
 		if changed {
 			return tea.ClearScreen
@@ -81,7 +89,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			}
 			return ResultsKeys(m, msg)
 		case model.StateHelp:
-			m.State = m.PrevState
+			m.DismissOverlay()
 			if m.State == model.StateInput {
 				return m.TextInput.Focus()
 			}
@@ -94,13 +102,17 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			return SettingsKeys(m, msg)
 		case model.StatePrioritizeInput:
 			return PrioritizeInputKeys(m, msg)
+		case model.StateDetails:
+			return DetailsKeys(m, msg)
+		case model.StateLabelInput:
+			return LabelInputKeys(m, msg)
 		}
 
 	case tea.MouseMsg:
 		return mouseHandler.Handle(m, msg)
 
 	case spinner.TickMsg:
-		if m.IsSearching || m.HistoryLoading || m.RulesLoading {
+		if m.IsSearching || m.HistoryLoading || m.RulesLoading || m.DetailsLoading {
 			var cmd tea.Cmd
 			m.Spinner, cmd = m.Spinner.Update(msg)
 			return cmd
@@ -134,8 +146,8 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		if msg.Err != nil {
 			return m.Notify("Could not delete result: " + msg.Err.Error())
 		}
-		m.State = model.StateResults
-		m.PrevState = model.StateResults
+		m.ResetDetails()
+		m.SetBaseState(model.StateResults)
 		render.ResizeSearchViewports(m)
 		render.RefreshAndScroll(m)
 		return tea.Batch(doSearch(m), m.Notify("Result deleted"))
@@ -158,6 +170,31 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		}
 		return m.Notify("Could not save rules: " + msg.Err.Error())
 
+	case model.LabelSavedMsg:
+		if msg.Err != nil {
+			return m.Notify("Could not update label: " + msg.Err.Error())
+		}
+		if m.Results != nil {
+			for _, doc := range m.Results.Documents {
+				if doc.URL == msg.URL {
+					doc.Label = msg.Label
+				}
+			}
+			for _, hit := range m.Results.SemanticHits {
+				if hit.Document != nil && hit.Document.URL == msg.URL {
+					hit.Document.Label = msg.Label
+				}
+			}
+		}
+		render.RefreshViewport(m)
+		if m.DetailsURL != "" {
+			m.Details.SetContent(render.ResultDetailsContent(m))
+		}
+		if msg.Label == "" {
+			return m.Notify("Label cleared")
+		}
+		return m.Notify("Label saved")
+
 	case model.ResultsMsg:
 		m.IsSearching = false
 		m.Results = msg.Results
@@ -169,6 +206,36 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		}
 		render.RefreshAndScroll(m)
 		return network.ListenToWebSocket(m.WsChan, m.WsDone)
+
+	case model.ServerConfigFetchedMsg:
+		if msg.Err != nil {
+			return m.Notify("Could not load server capabilities: " + msg.Err.Error())
+		}
+		if msg.Config != nil {
+			m.SemanticEnabled = msg.Config.SemanticEnabled
+			m.SemanticThreshold = msg.Config.SimilarityThreshold
+			m.SemanticWeight = msg.Config.SemanticWeight
+			if !m.SemanticEnabled {
+				m.SemanticOn = false
+			}
+		}
+
+	case model.PreviewDebounceMsg:
+		if msg.ID != m.DetailsRequestID || msg.URL != m.DetailsURL {
+			return nil
+		}
+		m.DetailsPendingReady = true
+		return m.StartPendingPreviewCmd()
+
+	case model.PreviewFetchedMsg:
+		m.DetailsFetching = false
+		if msg.URL == m.DetailsURL {
+			m.DetailsLoading = false
+			m.DetailsErr = msg.Err
+			m.DetailsPreview = msg.Preview
+			m.Details.SetContent(render.ResultDetailsContent(m))
+		}
+		return m.StartPendingPreviewCmd()
 
 	case model.WsConnectedMsg:
 		if msg.Conn != nil {

@@ -28,6 +28,7 @@ var overlayDefs = map[model.ViewState]overlayDef{
 	model.StateSettings:        {func(m *model.Model) string { return Settings(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.HelpBorder }, nil},
 	model.StateContextMenu:     {func(m *model.Model) string { return ContextMenu(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.DialogBorder }, MenuOverlayOffset},
 	model.StatePrioritizeInput: {func(m *model.Model) string { return PrioritizeInput(m) }, func(m *model.Model) lipgloss.Color { return m.Styles.DialogBorder }, nil},
+	model.StateLabelInput:      {LabelInput, func(m *model.Model) lipgloss.Color { return m.Styles.ThemeBorder }, nil},
 }
 
 func View(m *model.Model) string {
@@ -90,17 +91,71 @@ func MainView(m *model.Model) string {
 	return strings.Join([]string{header, div, inputLine, div, body, div, hints}, "\n")
 }
 
+// DetailsVisible reports whether the Search workspace has a readable preview
+// open. It is intentionally independent of State so a label/dialog overlay can
+// retain the split pane behind it.
+func DetailsVisible(m *model.Model) bool {
+	return m.ActiveTab == model.TabSearch && m.DetailsURL != ""
+}
+
+func DetailsSplit(m *model.Model) bool {
+	return DetailsVisible(m) && m.Width >= model.DetailsSplitMinWidth
+}
+
+func DetailsPaneWidth(m *model.Model) int {
+	w := max(1, m.Width-1)
+	if !DetailsSplit(m) {
+		return w
+	}
+	return min(model.DetailsPaneMaxWidth, max(model.DetailsPaneMinWidth, w*46/100))
+}
+
+// ResizeSearchViewports applies the same geometry that SearchBody renders.
+// Keeping this calculation in one place prevents wrapping, scrollbar, and
+// pointer hitboxes from disagreeing when the details pane opens or closes.
 func ResizeSearchViewports(m *model.Model) {
 	w := max(1, m.Width-1)
 	bodyH := max(1, m.Height-model.FixedLayoutRows)
-	m.Viewport.Width = max(1, w-2)
+	leftW := w
+	if DetailsSplit(m) {
+		leftW -= DetailsPaneWidth(m)
+	}
+	m.Viewport.Width = max(1, leftW-2)
 	m.Viewport.Height = bodyH
+
+	if DetailsVisible(m) {
+		m.Details.Width = max(1, DetailsPaneWidth(m)-2)
+		m.Details.Height = max(1, bodyH-2)
+	}
+}
+
+// DetailsPaneBounds returns the screen-space pane body used by mouse hit
+// testing. Y begins below the search input and its divider.
+func DetailsPaneBounds(m *model.Model) (x, y, width, height int) {
+	width = DetailsPaneWidth(m)
+	x = 0
+	if DetailsSplit(m) {
+		x = max(0, m.Width-1-width)
+	}
+	return x, model.RowVPStart, width, max(1, m.Height-model.FixedLayoutRows)
 }
 
 func SearchBody(m *model.Model) string {
 	w := max(1, m.Width-1)
 	bodyH := max(1, m.Height-model.FixedLayoutRows)
-	return resultsViewport(m, w, bodyH)
+	if DetailsVisible(m) && !DetailsSplit(m) {
+		return DetailsPane(m, w, bodyH)
+	}
+
+	leftW := w
+	if DetailsSplit(m) {
+		leftW -= DetailsPaneWidth(m)
+	}
+	results := resultsViewport(m, leftW, bodyH)
+	if !DetailsSplit(m) {
+		return results
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, results, DetailsPane(m, DetailsPaneWidth(m), bodyH))
 }
 
 func resultsViewport(m *model.Model, width, height int) string {
@@ -109,6 +164,32 @@ func resultsViewport(m *model.Model, width, height int) string {
 		content = lipgloss.JoinHorizontal(lipgloss.Top, content, " ", Scrollbar(m))
 	}
 	return normalizeBlock(content, width, height)
+}
+
+func DetailsPane(m *model.Model, width, height int) string {
+	innerW := max(1, width-2)
+	headerStyle := m.Styles.Gray
+	if m.DetailsFocused || !DetailsSplit(m) {
+		headerStyle = m.Styles.HelpHeader
+	}
+	title := headerStyle.Render("Preview")
+	if m.DetailsLoading {
+		title += " " + m.Styles.Spin.Render(m.Spinner.View())
+	}
+	closeButton := m.Styles.HintKey.Render("×")
+	header := truncateAnsi(title, max(1, innerW-2))
+	header = rightPad(header, max(1, innerW-lipgloss.Width(closeButton))) + closeButton
+	divider := m.Styles.Div.Render(strings.Repeat("─", innerW))
+	body := normalizeBlock(m.Details.View(), innerW, max(1, height-2))
+	content := strings.Join([]string{header, divider, body}, "\n")
+	content = normalizeBlock(content, innerW, height)
+
+	prefix := m.Styles.Div.Render("│") + " "
+	lines := strings.Split(content, "\n")
+	for i := range lines {
+		lines[i] = prefix + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func normalizeBlock(content string, width, height int) string {
@@ -164,6 +245,9 @@ func Header(m *model.Model) string {
 	if m.SortMode == "domain" {
 		appendMode("[domain]", "D")
 	}
+	if m.SemanticOn {
+		appendMode("[semantic]", "S")
+	}
 
 	cs := m.Styles.Disc.Render("● disconnected")
 	if m.WsReady {
@@ -200,6 +284,9 @@ func Header(m *model.Model) string {
 }
 
 func keyContext(m *model.Model) component.KeyContext {
+	if m.State == model.StateDetails {
+		return component.ContextDetails
+	}
 	switch m.ActiveTab {
 	case model.TabHistory:
 		return component.ContextHistory

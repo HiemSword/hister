@@ -24,6 +24,7 @@ type Deps struct {
 	CloseThemePickerWithRevert func(*model.Model) tea.Cmd
 	PreviewTheme               func(*model.Model)
 	ExecuteContextMenuAction   func(*model.Model) tea.Cmd
+	ReloadDetails              func(*model.Model) tea.Cmd
 }
 
 type Handler struct{ Deps }
@@ -117,7 +118,8 @@ func isLeftClick(msg Event) bool {
 func isOverlayState(s model.ViewState) bool {
 	switch s {
 	case model.StateHelp, model.StateDialog, model.StateThemePicker,
-		model.StateSettings, model.StateContextMenu, model.StatePrioritizeInput:
+		model.StateSettings, model.StateContextMenu, model.StatePrioritizeInput,
+		model.StateLabelInput:
 		return true
 	default:
 		return false
@@ -164,7 +166,12 @@ func (h *Handler) Handle(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	event := newEvent(msg)
 	if m.ScrollbarDragging {
 		if event.Action == actionMotion {
+			oldIdx := m.SelectedIdx
 			scrollToPercent(m, event.Y)
+			if m.State == model.StateDetails && oldIdx != m.SelectedIdx {
+				m.DetailsFocused = false
+				return h.ReloadDetails(m)
+			}
 			return nil
 		}
 		if event.Action == actionRelease {
@@ -176,6 +183,10 @@ func (h *Handler) Handle(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 	if isOverlayState(m.State) {
 		return h.overlay(m, event)
 	}
+	if m.State == model.StateDetails {
+		return h.details(m, event)
+	}
+
 	if m.ActiveTab != model.TabSearch {
 		return h.nonSearchTab(m, event)
 	}
@@ -207,6 +218,97 @@ func (h *Handler) Handle(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 		return scrollbarClick(m, event)
 	}
 	return h.viewportClick(m, event)
+}
+
+func (h *Handler) details(m *model.Model, event Event) tea.Cmd {
+	paneX, paneY, paneW, _ := render.DetailsPaneBounds(m)
+	inPane := event.X >= paneX && event.X < paneX+paneW
+	if delta := wheelDelta(event); delta != 0 {
+		if !vpRegion(m).ContainsY(event.Y) {
+			return nil
+		}
+		if inPane || !render.DetailsSplit(m) {
+			m.DetailsFocused = true
+			if delta < 0 {
+				m.Details.ScrollUp(3)
+			} else {
+				m.Details.ScrollDown(3)
+			}
+			return nil
+		}
+		m.DetailsFocused = false
+		maxIdx := m.GetTotalResults() - 1
+		if maxIdx == m.Limit {
+			maxIdx--
+		}
+		if model.ScrollIdx(&m.SelectedIdx, delta, 0, maxIdx) {
+			render.RefreshAndScroll(m)
+			return h.ReloadDetails(m)
+		}
+		return nil
+	}
+	if event.Action == actionClick && event.Button == tea.MouseButtonRight && render.DetailsSplit(m) && !inPane {
+		oldIdx := m.SelectedIdx
+		cmd := rightClick(m, event)
+		if oldIdx != m.SelectedIdx {
+			m.DetailsFocused = false
+			return tea.Batch(cmd, h.ReloadDetails(m))
+		}
+		return cmd
+	}
+	if !isLeftClick(event) {
+		return nil
+	}
+	if event.Y == model.RowTabBar {
+		return h.tabBar(m, event)
+	}
+	if event.Y == model.RowInput {
+		closeCmd := h.CloseOverlay(m)
+		focusCmd := inputRow(m, event)
+		return tea.Batch(closeCmd, focusCmd)
+	}
+	if event.Y == model.RowHints(m.Height) {
+		return h.hintRegions(m, event)
+	}
+	if inPane {
+		if event.Y == paneY && event.X == paneX+paneW-1 {
+			return h.CloseOverlay(m)
+		}
+		m.DetailsFocused = true
+		return nil
+	}
+	if !render.DetailsSplit(m) {
+		return nil
+	}
+	if m.TotalLines > m.Viewport.Height && m.Viewport.Height > 0 && event.X == paneX-1 {
+		oldIdx := m.SelectedIdx
+		cmd := scrollbarClick(m, event)
+		if oldIdx != m.SelectedIdx {
+			m.DetailsFocused = false
+			return tea.Batch(cmd, h.ReloadDetails(m))
+		}
+		return cmd
+	}
+	return h.detailsResultClick(m, event)
+}
+
+func (h *Handler) detailsResultClick(m *model.Model, event Event) tea.Cmd {
+	vp := vpRegion(m)
+	if !vp.ContainsY(event.Y) || len(m.LineOffsets) == 0 {
+		return nil
+	}
+	contentY := event.Y - vp.Y + m.Viewport.YOffset
+	idx := m.FindResultAtY(contentY)
+	if idx < 0 || idx >= m.GetTotalResults() || idx == m.Limit {
+		return nil
+	}
+	m.DetailsFocused = false
+	if idx == m.SelectedIdx {
+		return nil
+	}
+	m.SelectedIdx = idx
+	render.RefreshAndScroll(m)
+	return h.ReloadDetails(m)
 }
 
 // --- search-tab handlers ---

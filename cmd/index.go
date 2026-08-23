@@ -486,8 +486,7 @@ func markPersistentIndexFailure(jobID, rawURL string, err error) {
 		return
 	}
 	errCode := 0
-	var httpErr *client.HTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*client.HTTPError](err); ok {
 		errCode = httpErr.StatusCode
 	}
 	if dbErr := model.MarkCrawlURLFailed(jobID, rawURL, errCode, err.Error()); dbErr != nil {

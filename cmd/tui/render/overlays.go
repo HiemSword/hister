@@ -225,6 +225,19 @@ func PrioritizeInput(m *model.Model) string {
 	return m.Styles.Dialog.Render(strings.Join(lines, "\n"))
 }
 
+func LabelInput(m *model.Model) string {
+	lines := []string{
+		m.Styles.Title.Render("Edit label"),
+		"",
+		m.Styles.URL.Render(truncateLine(m.LabelURL, max(20, m.LabelInput.Width))),
+		"",
+		m.LabelInput.View(),
+		"",
+		m.Styles.Hint.Render("↵ save  ⎋ cancel  empty label clears it"),
+	}
+	return m.Styles.Dialog.Render(strings.Join(lines, "\n"))
+}
+
 func renderSwatch(p theme.Palette) string {
 	colors := []string{p.Base01, p.Base08, p.Base09, p.Base0A, p.Base0B, p.Base0C, p.Base0D, p.Base0E}
 	var sb strings.Builder
