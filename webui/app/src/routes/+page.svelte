@@ -2441,7 +2441,7 @@
                             <Badge
                               variant="secondary"
                               class="bg-hister-amber/10 text-hister-amber h-4 border-0 px-1.5 py-0"
-                              title="Prioritized because you opened it for this query"
+                              title="Prioritized because you opened it for this query. Use the result menu to forget it for this query."
                               >prioritized</Badge
                             >
                           {:else if r.updated}
