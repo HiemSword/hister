@@ -23,6 +23,7 @@ type Deps struct {
 	SubmitAdd                  func(*model.Model) tea.Cmd
 	CloseThemePickerWithRevert func(*model.Model) tea.Cmd
 	PreviewTheme               func(*model.Model)
+	CycleAppearance            func(*model.Model) tea.Cmd
 	ExecuteContextMenuAction   func(*model.Model) tea.Cmd
 	ReloadDetails              func(*model.Model) tea.Cmd
 }

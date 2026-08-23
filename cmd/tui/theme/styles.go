@@ -12,6 +12,7 @@ import (
 
 type Styles struct {
 	// Layout chrome
+	Text         lipgloss.Style
 	Brand        lipgloss.Style
 	Div          lipgloss.Style
 	PromptActive lipgloss.Style
@@ -98,6 +99,7 @@ func BuildStyles(p Palette) Styles {
 	c := func(hex string) color.Color { return lipgloss.Color(hex) }
 
 	return Styles{
+		Text:         lipgloss.NewStyle().Foreground(c(p.Base05)),
 		Brand:        lipgloss.NewStyle().Foreground(c(p.Base0D)).Bold(true),
 		Div:          lipgloss.NewStyle().Foreground(c(p.Base03)),
 		PromptActive: lipgloss.NewStyle().Foreground(c(p.Base09)).Bold(true),

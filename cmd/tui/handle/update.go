@@ -27,6 +27,7 @@ var mouseHandler = mouse.New(mouse.Deps{
 	SubmitAdd:                  submitAdd,
 	CloseThemePickerWithRevert: CloseThemePickerWithRevert,
 	PreviewTheme:               previewTheme,
+	CycleAppearance:            cycleAppearanceMode,
 	ExecuteContextMenuAction:   executeContextMenuAction,
 	ReloadDetails:              ReloadDetails,
 })

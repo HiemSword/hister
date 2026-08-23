@@ -32,9 +32,8 @@ func ThemePicker(m *model.Model) string {
 		}
 	}
 
-	modes := []string{"auto", "dark", "light"}
 	var modeParts []string
-	for _, mode := range modes {
+	for _, mode := range theme.ColorSchemeModes {
 		if mode == m.ThemePickerMode {
 			modeParts = append(modeParts, m.Styles.ThemePickerSelected.Render("["+mode+"]"))
 		} else {
@@ -140,7 +139,9 @@ func Settings(m *model.Model) string {
 	if m.SettingsEditErr != "" {
 		errorRows = 2
 	}
-	start, end := windowRange(len(items), m.SettingsIdx, max(1, m.Height-8-errorRows))
+	bindingCursor := max(0, m.SettingsIdx-1)
+	start, end := windowRange(len(items), bindingCursor, max(1, m.Height-10-errorRows))
+	m.SettingsStart, m.SettingsCount = start, end-start
 
 	maxKeyW := 0
 	for _, it := range items {
@@ -151,10 +152,18 @@ func Settings(m *model.Model) string {
 	}
 
 	var lines []string
-	lines = append(lines, m.Styles.Title.Render(rangeHeader("Keybindings", start, end, len(items))))
+	lines = append(lines, m.Styles.Title.Render("Settings"))
+	appearance := "  Appearance  " + appearanceModeLabel(m.Cfg.TUI.ColorScheme)
+	if m.SettingsIdx == 0 {
+		appearance = m.Styles.ThemePickerSelected.Render("▸ Appearance  " + appearanceModeLabel(m.Cfg.TUI.ColorScheme))
+	} else {
+		appearance = m.Styles.ThemePickerItem.Render(appearance)
+	}
+	lines = append(lines, appearance)
 	lines = append(lines, "")
+	lines = append(lines, m.Styles.HelpHeader.Render(rangeHeader("Keybindings", start, end, len(items))))
 	for i, it := range items[start:end] {
-		absoluteIdx := start + i
+		absoluteIdx := start + i + 1
 		if absoluteIdx == m.SettingsIdx && m.SettingsEditMode {
 			lines = append(lines, m.Styles.ThemePickerSelected.Render("  Press a key...  →  "+string(it.Action)))
 		} else {
@@ -178,9 +187,29 @@ func Settings(m *model.Model) string {
 	} else {
 		sNav := m.Keys.BestKey(config.ActionScrollDown)
 		sEdit := m.Keys.BestKey(config.ActionOpenResult)
-		lines = append(lines, m.Styles.Hint.Render(sNav+" navigate  "+sEdit+" edit  ⎋ close"))
+		sTheme := m.Keys.BestKey(config.ActionToggleTheme)
+		action := "edit"
+		if m.SettingsIdx == 0 {
+			action = "change mode"
+		}
+		lines = append(lines, m.Styles.Hint.Render(sNav+" navigate  "+sEdit+" "+action+"  "+sTheme+" themes  ⎋ close"))
 	}
 	return m.Styles.Help.Render(strings.Join(lines, "\n"))
+}
+
+func appearanceModeLabel(mode string) string {
+	switch mode {
+	case "", theme.TerminalName:
+		return "Terminal (pass-through)"
+	case "auto":
+		return "Auto (dark/light)"
+	case "dark":
+		return "Dark theme"
+	case "light":
+		return "Light theme"
+	default:
+		return mode
+	}
 }
 
 func windowRange(length, cursor, budget int) (int, int) {
