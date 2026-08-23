@@ -5,6 +5,7 @@
 package model
 
 import (
+	"slices"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -35,6 +36,18 @@ const (
 func (s ViewState) String() string {
 	return []string{"INPUT", "RESULTS", "DIALOG", "HELP", "THEME_PICKER", "CONTEXT_MENU", "SETTINGS", "PRIORITIZE_INPUT", "DETAILS", "LABEL_INPUT"}[s]
 }
+
+// NoticeKind lets transient and inline messages communicate meaning with
+// words/symbols as well as color. This matters in terminal and no-color modes,
+// where hue alone is not a reliable status indicator.
+type NoticeKind uint8
+
+const (
+	NoticeInfo NoticeKind = iota
+	NoticeSuccess
+	NoticeWarning
+	NoticeError
+)
 
 // sent over WebSocket to the search server
 type SearchQuery struct {
@@ -147,10 +160,8 @@ var Tabs = []TabDefinition{
 }
 
 func TabForAction(action config.Action) (int, bool) {
-	for _, tab := range Tabs {
-		if tab.Action == action {
-			return tab.ID, true
-		}
+	if i := slices.IndexFunc(Tabs, func(tab TabDefinition) bool { return tab.Action == action }); i >= 0 {
+		return Tabs[i].ID, true
 	}
 	return 0, false
 }
@@ -266,20 +277,6 @@ func PrioritizeBtnRowY() int { return 7 }
 
 const AddTextHeight = 5
 
-var SearchTips = []string{
-	"Type to search...",
-	"Tip: Use quotes for exact phrases",
-	"Tip: Press Tab to focus results",
-	"Tip: Press Ctrl+D to delete a result",
-	"Tip: Sort by domain with Ctrl+O",
-	"Tip: Toggle semantic search with Ctrl+E",
-	"Tip: Press Ctrl+T to change theme",
-	"Tip: Press Ctrl+S to edit keybindings",
-	"Tip: Press F1 for help",
-	"Tip: Right-click for context menu",
-	"Tip: Press Alt+2/3/4 for History/Rules/Add",
-}
-
 func (m *Model) FlashHint(action config.Action) tea.Cmd {
 	m.HintFlash = action
 	return ClearHintAfter()
@@ -292,10 +289,34 @@ func ClearHintAfter() tea.Cmd {
 }
 
 func (m *Model) Notify(message string) tea.Cmd {
+	return m.notify(message, NoticeInfo)
+}
+
+func (m *Model) NotifySuccess(message string) tea.Cmd {
+	return m.notify(message, NoticeSuccess)
+}
+
+func (m *Model) NotifyWarning(message string) tea.Cmd {
+	return m.notify(message, NoticeWarning)
+}
+
+func (m *Model) NotifyError(message string) tea.Cmd {
+	return m.notify(message, NoticeError)
+}
+
+func (m *Model) notify(message string, kind NoticeKind) tea.Cmd {
 	m.Notice = message
+	m.NoticeKind = kind
 	m.NoticeID++
 	id := m.NoticeID
-	return tea.Tick(2500*time.Millisecond, func(_ time.Time) tea.Msg {
+	duration := 2500 * time.Millisecond
+	switch kind {
+	case NoticeWarning:
+		duration = 4 * time.Second
+	case NoticeError:
+		duration = 6 * time.Second
+	}
+	return tea.Tick(duration, func(_ time.Time) tea.Msg {
 		return NoticeClearMsg{ID: id}
 	})
 }

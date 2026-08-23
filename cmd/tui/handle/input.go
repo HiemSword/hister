@@ -28,9 +28,7 @@ func InputKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 
 	switch action {
 	case config.ActionToggleFocus:
-		if m.GetTotalResults() > 0 {
-			m.State = model.StateResults
-			m.TextInput.Blur()
+		if m.FocusSearchResults() {
 			if m.SelectedIdx < 0 {
 				m.SelectedIdx = 0
 			}
@@ -38,17 +36,13 @@ func InputKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.FlashHint(config.ActionToggleFocus)
 	case config.ActionOpenResult:
-		if m.SelectedIdx >= 0 {
-			if m.SelectedIdx == m.Limit {
-				m.Limit += model.ResultsPageSize
-				render.RefreshAndScroll(m)
-				return startSearch(m, m.FlashHint(config.ActionOpenResult))
-			} else if u := m.GetSelectedURL(); u != "" {
-				if err := browser.OpenURL(u); err != nil {
-					log.Warn().Err(err).Msg("failed to open URL in browser")
-				}
-				return tea.Batch(m.FlashHint(config.ActionOpenResult), m.PostHistoryCmd(u))
-			}
+		if m.Results != nil && m.Results.QuerySuggestion != "" {
+			suggestion := m.Results.QuerySuggestion
+			m.TextInput.SetValue(suggestion)
+			m.TextInput.SetCursor(len([]rune(suggestion)))
+			m.Limit = model.ResultsPageSize
+			m.SelectedIdx = -1
+			return startSearch(m, m.FlashHint(config.ActionOpenResult))
 		}
 		return m.FlashHint(config.ActionOpenResult)
 	}

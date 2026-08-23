@@ -63,6 +63,7 @@ type Styles struct {
 	// List items
 	Item             lipgloss.Style
 	SelectedItem     lipgloss.Style
+	SelectedItemBlur lipgloss.Style
 	LoadMore         lipgloss.Style
 	LoadMoreSelected lipgloss.Style
 
@@ -141,9 +142,14 @@ func BuildStyles(p Palette) Styles {
 
 		Item: lipgloss.NewStyle().PaddingLeft(2),
 		SelectedItem: lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
+			BorderStyle(lipgloss.ThickBorder()).
 			BorderLeft(true).
 			BorderForeground(c(p.Base0D)).
+			PaddingLeft(1),
+		SelectedItemBlur: lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderLeft(true).
+			BorderForeground(c(p.Base03)).
 			PaddingLeft(1),
 		LoadMore: lipgloss.NewStyle().Foreground(c(p.Base09)).Bold(true),
 		LoadMoreSelected: lipgloss.NewStyle().

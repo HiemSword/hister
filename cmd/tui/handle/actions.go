@@ -44,7 +44,7 @@ func DispatchCommonAction(m *model.Model, action config.Action) (tea.Cmd, bool) 
 		return startSearch(m, m.FlashHint(config.ActionToggleSort)), true
 	case config.ActionToggleSemantic:
 		if !m.SemanticEnabled {
-			return m.Notify("Semantic search is not enabled on this server"), true
+			return m.NotifyWarning("Semantic search is not enabled on this server"), true
 		}
 		m.SemanticOn = !m.SemanticOn
 		if m.SemanticOn {
@@ -64,6 +64,12 @@ func DispatchCommonAction(m *model.Model, action config.Action) (tea.Cmd, bool) 
 			}
 			return nil, true
 		}
+		enteredResults := m.FocusSearchResults()
+		if enteredResults && m.SelectedIdx < 0 {
+			m.SelectedIdx = 0
+			render.RefreshAndScroll(m)
+			return m.FlashHint(config.ActionScrollUp), true
+		}
 		if m.SelectedIdx > 0 {
 			m.SelectedIdx--
 			render.RefreshAndScroll(m)
@@ -81,6 +87,12 @@ func DispatchCommonAction(m *model.Model, action config.Action) (tea.Cmd, bool) 
 				return tea.Batch(ReloadDetails(m), m.FlashHint(action)), true
 			}
 			return nil, true
+		}
+		enteredResults := m.FocusSearchResults()
+		if enteredResults && m.SelectedIdx < 0 {
+			m.SelectedIdx = 0
+			render.RefreshAndScroll(m)
+			return m.FlashHint(config.ActionScrollDown), true
 		}
 		if m.SelectedIdx < m.GetTotalResults()-1 {
 			m.SelectedIdx++
@@ -115,9 +127,9 @@ func copySelectedURL(m *model.Model) tea.Cmd {
 		u = m.HistoryItems[m.HistoryIdx].URL
 	}
 	if u == "" {
-		return m.Notify("Nothing selected")
+		return m.NotifyWarning("Nothing selected")
 	}
-	return tea.Batch(tea.SetClipboard(u), m.Notify("URL copied"), m.FlashHint(config.ActionCopyResult))
+	return tea.Batch(tea.SetClipboard(u), m.NotifySuccess("URL copied"), m.FlashHint(config.ActionCopyResult))
 }
 
 func OpenDetails(m *model.Model) tea.Cmd {
@@ -133,7 +145,7 @@ func ReloadDetails(m *model.Model) tea.Cmd {
 func loadDetails(m *model.Model, focusPreview, activate bool) tea.Cmd {
 	u := m.GetSelectedURL()
 	if u == "" {
-		return m.Notify("Nothing selected")
+		return m.NotifyWarning("Nothing selected")
 	}
 	title := m.GetSelectedTitle()
 	startSpinner := !m.DetailsLoading
@@ -159,7 +171,7 @@ func loadDetails(m *model.Model, focusPreview, activate bool) tea.Cmd {
 func OpenLabelEditor(m *model.Model) tea.Cmd {
 	doc := m.GetSelectedDocument()
 	if doc == nil {
-		return m.Notify("Labels are available for indexed documents")
+		return m.NotifyWarning("Labels are available for indexed documents")
 	}
 	m.LabelURL = doc.URL
 	m.LabelInput.SetValue(doc.Label)
@@ -295,6 +307,9 @@ func submitAdd(m *model.Model) tea.Cmd {
 	u := strings.TrimSpace(m.AddInputs[0].Value())
 	if u == "" {
 		m.AddStatus = "URL is required"
+		m.AddStatusKind = model.NoticeError
+		m.AddFocusIdx = 0
+		m.AddInputs[0].Focus()
 		return nil
 	}
 	if !strings.Contains(u, "://") {
@@ -304,6 +319,7 @@ func submitAdd(m *model.Model) tea.Cmd {
 	title := strings.TrimSpace(m.AddInputs[1].Value())
 	text := strings.TrimSpace(m.AddText.Value())
 	m.AddStatus = "Adding..."
+	m.AddStatusKind = model.NoticeInfo
 	return m.AddPageCmd(u, title, text)
 }
 

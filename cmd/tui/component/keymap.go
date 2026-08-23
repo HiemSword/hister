@@ -14,13 +14,17 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // KeyContext selects the concise, task-specific bindings shown in the footer.
 type KeyContext uint8
 
 const (
-	ContextSearch KeyContext = iota
+	ContextSearchInput KeyContext = iota
+	ContextSearchInputEmpty
+	ContextSearchSuggestion
+	ContextSearchResults
 	ContextHistory
 	ContextRules
 	ContextAdd
@@ -133,26 +137,56 @@ func (k KeyMap) Binding(action config.Action) (key.Binding, bool) {
 // Bubbles binding. Overlays use this instead of scanning persisted config a
 // second time, so edited bindings update every help surface immediately.
 func (k KeyMap) BestKey(action config.Action) string {
+	return k.bestKey(action, func(string) bool { return true })
+}
+
+func (k KeyMap) bestKey(action config.Action, usable func(string) bool) string {
 	binding, ok := k.bindings[action]
 	if !ok {
 		return ""
 	}
 	best := ""
 	for _, name := range binding.Keys() {
+		if !usable(name) {
+			continue
+		}
 		formatted := FormatKey(name)
-		if best == "" || len([]rune(formatted)) < len([]rune(best)) {
+		if best == "" || ansi.StringWidth(formatted) < ansi.StringWidth(best) {
 			best = formatted
 		}
 	}
 	return best
 }
 
-func (k KeyMap) hint(action config.Action, label string) (Hint, bool) {
+func (k KeyMap) searchInputKey(action config.Action) string {
+	return k.bestKey(action, func(name string) bool { return len([]rune(name)) != 1 })
+}
+
+func (k KeyMap) preferredSearchInputKey(action config.Action, preferred string) string {
+	binding, ok := k.bindings[action]
+	if ok && slices.Contains(binding.Keys(), preferred) {
+		return FormatKey(preferred)
+	}
+	return k.searchInputKey(action)
+}
+
+func (k KeyMap) focusResultsKeys() string {
+	keys := []string{
+		k.searchInputKey(config.ActionScrollDown),
+		k.preferredSearchInputKey(config.ActionToggleFocus, "tab"),
+	}
+	return strings.Join(slices.DeleteFunc(keys, func(key string) bool { return key == "" }), "/")
+}
+
+func (k KeyMap) hint(action config.Action, keyLabel, label string) (Hint, bool) {
 	binding, ok := k.bindings[action]
 	if !ok {
 		return Hint{}, false
 	}
 	help := binding.Help()
+	if keyLabel != "" {
+		help.Key = keyLabel
+	}
 	if label != "" {
 		help.Desc = label
 		binding.SetHelp(help.Key, help.Desc)
@@ -164,60 +198,86 @@ func (k KeyMap) hint(action config.Action, label string) (Hint, bool) {
 func (k KeyMap) ShortHints() []Hint {
 	type entry struct {
 		action config.Action
+		key    string
 		label  string
 	}
 	var entries []entry
 	switch k.context {
 	case ContextDetails:
 		entries = []entry{
-			{config.ActionToggleFocus, "results/preview"},
-			{config.ActionScrollDown, "navigate/scroll"},
-			{config.ActionOpenResult, "open"},
-			{config.ActionCopyResult, "copy"},
-			{config.ActionEditLabel, "label"},
-			{config.ActionTogglePreview, "close preview"},
-			{config.ActionToggleHelp, "help"},
+			{action: config.ActionToggleFocus, label: "results/preview"},
+			{action: config.ActionScrollDown, label: "navigate/scroll"},
+			{action: config.ActionOpenResult, label: "open"},
+			{action: config.ActionCopyResult, label: "copy"},
+			{action: config.ActionEditLabel, label: "label"},
+			{action: config.ActionTogglePreview, label: "close preview"},
+			{action: config.ActionToggleHelp, label: "help"},
 		}
 	case ContextHistory:
 		entries = []entry{
-			{config.ActionScrollDown, "navigate"},
-			{config.ActionOpenResult, "open"},
-			{config.ActionCopyResult, "copy"},
-			{config.ActionDeleteResult, "delete"},
-			{config.ActionToggleFocus, "back"},
-			{config.ActionToggleHelp, "help"},
+			{action: config.ActionScrollDown, label: "navigate"},
+			{action: config.ActionOpenResult, label: "open"},
+			{action: config.ActionCopyResult, label: "copy"},
+			{action: config.ActionDeleteResult, label: "delete"},
+			{action: config.ActionToggleFocus, label: "back"},
+			{action: config.ActionToggleHelp, label: "help"},
 		}
 	case ContextRules:
 		entries = []entry{
-			{config.ActionToggleFocus, "form/list"},
-			{config.ActionScrollDown, "navigate"},
-			{config.ActionOpenResult, "add/edit"},
-			{config.ActionDeleteResult, "delete"},
-			{config.ActionToggleHelp, "help"},
+			{action: config.ActionToggleFocus, label: "form/list"},
+			{action: config.ActionScrollDown, label: "navigate"},
+			{action: config.ActionOpenResult, label: "add/edit"},
+			{action: config.ActionDeleteResult, label: "delete"},
+			{action: config.ActionToggleHelp, label: "help"},
 		}
 	case ContextAdd:
 		entries = []entry{
-			{config.ActionToggleFocus, "next/back"},
-			{config.ActionOpenResult, "submit"},
-			{config.ActionToggleHelp, "help"},
+			{action: config.ActionToggleFocus, label: "next/back"},
+			{action: config.ActionOpenResult, label: "continue/submit"},
+			{action: config.ActionToggleHelp, label: "help"},
 		}
-	default:
+	case ContextSearchInput:
+		focusAction := config.Action("")
+		if k.searchInputKey(config.ActionToggleFocus) != "" {
+			focusAction = config.ActionToggleFocus
+		} else if k.searchInputKey(config.ActionScrollDown) != "" {
+			focusAction = config.ActionScrollDown
+		}
 		entries = []entry{
-			{config.ActionScrollDown, "navigate"},
-			{config.ActionOpenResult, "open"},
-			{config.ActionCopyResult, "copy"},
-			{config.ActionTogglePreview, "details"},
-			{config.ActionDeleteResult, "delete"},
-			{config.ActionToggleSort, "sort"},
-			{config.ActionToggleSemantic, "semantic"},
-			{config.ActionToggleHelp, "help"},
-			{config.ActionQuit, "quit"},
+			{action: focusAction, key: k.focusResultsKeys(), label: "focus results"},
+			{action: config.ActionToggleSort, label: "sort"},
+			{action: config.ActionToggleSemantic, label: "semantic"},
+			{action: config.ActionToggleHelp, label: "help"},
+			{action: config.ActionQuit, label: "quit"},
+		}
+	case ContextSearchSuggestion:
+		entries = []entry{
+			{action: config.ActionOpenResult, label: "try suggestion"},
+			{action: config.ActionToggleHelp, label: "help"},
+			{action: config.ActionQuit, label: "quit"},
+		}
+	case ContextSearchInputEmpty:
+		entries = []entry{
+			{action: config.ActionTabHistory, label: "history"},
+			{action: config.ActionToggleTheme, label: "appearance"},
+			{action: config.ActionToggleHelp, label: "help"},
+			{action: config.ActionQuit, label: "quit"},
+		}
+	default: // ContextSearchResults
+		entries = []entry{
+			{action: config.ActionToggleFocus, label: "search"},
+			{action: config.ActionScrollDown, label: "navigate"},
+			{action: config.ActionOpenResult, label: "open"},
+			{action: config.ActionCopyResult, label: "copy"},
+			{action: config.ActionTogglePreview, label: "preview"},
+			{action: config.ActionDeleteResult, label: "delete"},
+			{action: config.ActionToggleHelp, label: "help"},
 		}
 	}
 
 	hints := make([]Hint, 0, len(entries))
 	for _, entry := range entries {
-		if hint, ok := k.hint(entry.action, entry.label); ok {
+		if hint, ok := k.hint(entry.action, entry.key, entry.label); ok {
 			hints = append(hints, hint)
 		}
 	}

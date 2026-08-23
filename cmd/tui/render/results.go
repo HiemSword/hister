@@ -13,19 +13,31 @@ import (
 	smodel "github.com/asciimoo/hister/server/model"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func Results(m *model.Model) string {
 	documents := m.VisibleDocuments()
 	if m.Results == nil || (len(documents) == 0 && len(m.Results.History) == 0) {
 		m.LineOffsets = nil
+		m.SuggestionHeight = 0
 		if m.IsSearching {
 			return m.Styles.Gray.Render("  " + m.Spinner.View() + " searching…")
 		}
-		if m.TextInput.Value() != "" {
-			return m.Styles.Gray.Render("  No results found")
+		query := sanitizeTerminalLine(m.TextInput.Value())
+		if !m.WsReady {
+			return emptyState(m, "Search is offline", "Hister is reconnecting automatically. Your query will stay here.")
 		}
-		return m.Styles.Gray.Render("  " + model.SearchTips[m.TipIdx])
+		if query != "" {
+			title := "No results for “" + truncateLine(query, max(8, m.Viewport.Width()-22)) + "”"
+			detail := "Try fewer words or check the spelling."
+			if m.Results != nil && m.Results.QuerySuggestion != "" {
+				suggestion := sanitizeTerminalLine(m.Results.QuerySuggestion)
+				detail = "Did you mean “" + truncateLine(suggestion, max(8, m.Viewport.Width()-24)) + "”? Press Enter to try it."
+			}
+			return emptyState(m, title, detail)
+		}
+		return emptyState(m, "Search your history", "Type above to search indexed content and past visits.")
 	}
 	var items []string
 	var lineOffsets []int
@@ -69,7 +81,7 @@ func Results(m *model.Model) string {
 			}
 			lastDomain = d.Domain
 			domLabel := strings.TrimPrefix(d.Domain, "www.")
-			ruleW := max(0, w-len([]rune(domLabel))-3)
+			ruleW := max(0, w-lipgloss.Width(domLabel)-3)
 			domDiv := "  " + m.Styles.DomainHeader.Render(domLabel) + " " + m.Styles.Div.Render(strings.Repeat("─", ruleW))
 			items = append(items, domDiv)
 			currentLine += lipgloss.Height(domDiv) + 1
@@ -94,14 +106,14 @@ func Results(m *model.Model) string {
 		totalAvailable := max(int(m.Results.Total)+len(m.Results.History), totalItems)
 		rem := max(0, totalAvailable-m.Limit)
 		var content string
-		if currentIdx == m.SelectedIdx {
+		if currentIdx == m.SelectedIdx && resultListFocused(m) {
 			content = m.Styles.LoadMoreSelected.Render(fmt.Sprintf("[ ▼ Load 10 more (%d remaining) ]", rem))
 		} else {
 			content = m.Styles.LoadMore.Render(fmt.Sprintf("[ ▼ Load 10 more (%d remaining) ]", rem))
 		}
 		var item string
 		if currentIdx == m.SelectedIdx {
-			item = style.Render(m.Styles.SelectedItem.Render(content))
+			item = style.Render(selectedResultStyle(m).Render(content))
 		} else {
 			item = style.Render(m.Styles.Item.Render(content))
 		}
@@ -110,7 +122,7 @@ func Results(m *model.Model) string {
 
 	output := strings.Join(items, "\n\n")
 	if m.Results.QuerySuggestion != "" {
-		sugg := "  " + m.Styles.SuggLabel.Render("did you mean: ") + m.Styles.SuggTerm.Render(m.Results.QuerySuggestion)
+		sugg := "  " + m.Styles.SuggLabel.Render("did you mean: ") + m.Styles.SuggTerm.Render(sanitizeTerminalLine(m.Results.QuerySuggestion))
 		suggH := lipgloss.Height(sugg) + 1
 		for i := range lineOffsets {
 			lineOffsets[i] += suggH
@@ -124,9 +136,33 @@ func Results(m *model.Model) string {
 	return output
 }
 
+func emptyState(m *model.Model, title, detail string) string {
+	return strings.Join([]string{
+		"",
+		"  " + m.Styles.HelpHeader.Render(title),
+		"  " + m.Styles.Gray.Render(detail),
+	}, "\n")
+}
+
+func resultListFocused(m *model.Model) bool {
+	return m.State == model.StateResults ||
+		(m.State == model.StateDetails && renderResultsPaneFocused(m))
+}
+
+func renderResultsPaneFocused(m *model.Model) bool {
+	return DetailsSplit(m) && !m.DetailsFocused
+}
+
+func selectedResultStyle(m *model.Model) lipgloss.Style {
+	if resultListFocused(m) {
+		return m.Styles.SelectedItem
+	}
+	return m.Styles.SelectedItemBlur
+}
+
 func HistoryItem(m *model.Model, h *smodel.URLCount, sel bool, contentW int) string {
 	ts := m.Styles.Title
-	if sel {
+	if sel && resultListFocused(m) {
 		ts = m.Styles.SelTitle
 	}
 	const badgeW = 4
@@ -139,20 +175,20 @@ func HistoryItem(m *model.Model, h *smodel.URLCount, sel bool, contentW int) str
 	}
 
 	titleMaxW := max(1, contentW-badgeW-countW)
-	titleRendered := ts.Render(truncateLine(strings.Join(strings.Fields(h.Title), " "), titleMaxW))
+	titleRendered := renderTitle(ts, strings.Join(strings.Fields(h.Title), " "), titleMaxW)
 	titleLine := m.Styles.Hist.Render("[H] ") + rightPad(titleRendered, contentW-badgeW-countW) +
 		strings.Repeat(" ", max(0, countW-lipgloss.Width(countRendered))) + countRendered
 
 	content := titleLine + "\n" + renderURL(m.Styles, h.URL, "", contentW)
 	if sel {
-		return m.Styles.SelectedItem.Render(content)
+		return selectedResultStyle(m).Render(content)
 	}
 	return m.Styles.Item.Render(content)
 }
 
 func Document(m *model.Model, d *document.Document, sel bool, contentW int) string {
 	ts := m.Styles.Title
-	if sel {
+	if sel && resultListFocused(m) {
 		ts = m.Styles.SelTitle
 	}
 
@@ -178,7 +214,7 @@ func Document(m *model.Model, d *document.Document, sel bool, contentW int) stri
 	}
 
 	titleMaxW := max(1, contentW-timeW-domainBadgeW-labelBadgeW)
-	titleRendered := ts.Render(truncateLine(strings.Join(strings.Fields(d.Title), " "), titleMaxW))
+	titleRendered := renderTitle(ts, strings.Join(strings.Fields(d.Title), " "), titleMaxW)
 	titleLine := labelBadge + domainBadge + rightPad(titleRendered, contentW-timeW-domainBadgeW-labelBadgeW) +
 		strings.Repeat(" ", max(0, timeW-lipgloss.Width(timeRendered))) + timeRendered
 
@@ -192,9 +228,27 @@ func Document(m *model.Model, d *document.Document, sel bool, contentW int) stri
 		sb.WriteString(m.Styles.SecText.Render(snippet))
 	}
 	if sel {
-		return m.Styles.SelectedItem.Render(sb.String())
+		return selectedResultStyle(m).Render(sb.String())
 	}
 	return m.Styles.Item.Render(sb.String())
+}
+
+// renderTitle reapplies the title style after each search-highlight reset.
+// The server's TUI highlighter wraps matches in its own SGR style, whose reset
+// would otherwise also cancel the surrounding selected-title color.
+func renderTitle(style lipgloss.Style, title string, maxW int) string {
+	title = truncateLine(title, maxW)
+	// Lip Gloss emits ESC[m, while accepting ESC[0m from other SGR producers
+	// costs little and keeps the style boundary well-defined.
+	title = strings.ReplaceAll(title, "\x1b[0m", ansi.ResetStyle)
+	parts := strings.Split(title, ansi.ResetStyle)
+	var rendered strings.Builder
+	for _, part := range parts {
+		if part != "" {
+			rendered.WriteString(style.Render(part))
+		}
+	}
+	return rendered.String()
 }
 
 func Scrollbar(m *model.Model) string {

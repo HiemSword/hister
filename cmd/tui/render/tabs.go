@@ -19,7 +19,7 @@ func HistoryTab(m *model.Model) string {
 		return m.Styles.Gray.Render("  " + m.Spinner.View() + " loading…")
 	}
 	if len(m.HistoryItems) == 0 {
-		return m.Styles.Gray.Render("  No history items")
+		return workspaceEmptyState(m, "No history yet", "Open a search result and it will appear here.")
 	}
 	contentW := max(1, m.Width-5)
 	var lines []string
@@ -114,7 +114,7 @@ func RulesTab(m *model.Model) string {
 			if section.ID == m.RulesSection && m.RulesFormFocus == model.RulesFocusList {
 				m.WorkspaceSelectionY = formY
 			}
-			lines = append(lines, m.Styles.Gray.Render("    (none)"))
+			lines = append(lines, m.Styles.Gray.Render("    No entries yet — use the form above to add one."))
 		}
 		for i, item := range items {
 			var row string
@@ -188,7 +188,15 @@ func AddTab(m *model.Model) string {
 	lines = append(lines, submit)
 	if m.AddStatus != "" {
 		lines = append(lines, "")
-		lines = append(lines, "  "+m.Styles.Conn.Render(m.AddStatus))
+		lines = append(lines, "  "+renderStatusMessage(m, m.AddStatus, m.AddStatusKind))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func workspaceEmptyState(m *model.Model, title, detail string) string {
+	return strings.Join([]string{
+		"",
+		"  " + m.Styles.HelpHeader.Render(title),
+		"  " + m.Styles.Gray.Render(detail),
+	}, "\n")
 }

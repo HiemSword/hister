@@ -37,6 +37,8 @@ func (a *app) View() tea.View {
 	v := tea.NewView(render.View(a.m))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+	// A nil color tells Bubble Tea to retain the terminal's configured color.
+	// Full themes opt in to painting the screen; terminal/no-color modes do not.
 	if a.m.Cfg.TUI.ColorScheme != theme.TerminalName && a.m.ThemeName != "no-color" {
 		v.BackgroundColor = a.m.BackgroundColor
 		v.ForegroundColor = a.m.ForegroundColor
