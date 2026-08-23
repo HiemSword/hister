@@ -150,6 +150,11 @@ Use `hister import file` to add documents from files on disk. It accepts an arbi
 number of files or directories, which are imported in order and reported as a
 combined total:
 
+> **Important:** You do not need to run `hister import file` to add or track files
+> configured in `indexer.directories`. After you add a directory to the configuration,
+> restart the Hister server. The server scans the directory and starts watching it
+> automatically.
+
 ```bash
 hister import file export.json page.html ~/Downloads/saved-pages
 ```
@@ -168,7 +173,9 @@ Several input formats are supported:
   Only prepared document fields are sent to the server.
 
 When a directory is passed, Hister imports matching files recursively. With no input,
-it imports files from configured watched directories and applies their filters.
+it creates remote file snapshots from configured watched directories and applies their
+filters. Use this mode only when the command line client can read those directories but
+the server cannot. These snapshots do not track later file changes or removals.
 
 ```bash
 # Import a single saved web page
@@ -177,7 +184,7 @@ hister import file ~/Downloads/article.html
 # Import all supported files recursively from a directory
 hister import file ~/Downloads/saved-pages
 
-# Import files matched by every configured watched directory
+# Create snapshots when the server cannot access configured directories
 hister import file
 ```
 
@@ -195,7 +202,7 @@ Useful flags:
 > is started before importing. See [Importing Documents](import) for file,
 > browser history, and Linkwarden import instructions.
 
-`hister import file` creates searchable snapshots when the server cannot read files directly. Snapshot extraction occurs locally and only the prepared document is sent through the normal add API. With no paths it imports every file matched by configured watched directories. Explicit directories are recursive.
+`hister import file` creates searchable snapshots when the server cannot read files directly. Snapshot extraction occurs locally and only the prepared document is sent through the normal add API. It is not needed for normal local file tracking. Starting or restarting the server scans every configured directory and starts its file watcher automatically. With no paths, the command creates snapshots for every file matched by configured watched directories. Explicit directories are recursive.
 
 ```bash
 hister import file

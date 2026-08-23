@@ -158,9 +158,17 @@ submitted through the normal add endpoint as remote file snapshots.
 Multiple files may be given; they are imported in order and the result is
 reported as a combined total.
 
-Directories may be given too and are imported recursively. With no input,
-files matched by the configured watched directories are imported using their
-file type, pattern, exclusion, hidden path, and label rules.
+Directories may be given too and are imported recursively.
+
+Files in indexer.directories do not need this command when the server can
+access them. Starting or restarting the server automatically scans those
+directories and watches them for later changes.
+
+With no input, this command creates remote file snapshots from the configured
+directories using their file type, pattern, exclusion, hidden path, and label
+rules. This mode is intended for directories that the command line client can
+access but the server cannot. Remote file snapshots are not watched for later
+changes.
 
 Use --start-date and --end-date (format: YYYY-MM-DD) to only import
 documents whose "added" timestamp falls within the given date range.`,

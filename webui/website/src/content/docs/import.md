@@ -35,6 +35,10 @@ Hister also limits each batch according to the byte limit advertised by the dest
 
 Use `hister import file` with any number of files or directories:
 
+> **Important:** You do not need this command to add or track files configured in
+> `indexer.directories`. Restart the Hister server after configuring a directory. The
+> server automatically scans it at startup and watches it for later changes.
+
 ```bash
 hister import file export.json page.html ~/Downloads/saved-pages
 ```
@@ -51,7 +55,7 @@ Supported inputs are:
 
 PDF, DOCX, Markdown, Org mode, and valid UTF 8 text use the same handlers as watched files. JSON that does not have the Hister export array shape and HTML that has no source URL are also treated as file snapshots.
 
-With no input paths, the command recursively imports files from every configured watched directory. It applies the same file type, pattern, exclusion, hidden path, size, and label settings:
+With no input paths, the command recursively creates remote file snapshots from every configured watched directory. It applies the same file type, pattern, exclusion, hidden path, size, and label settings. Use this mode only when the command line client can read those directories but the server cannot:
 
 ```bash
 hister import file
@@ -63,7 +67,7 @@ You can also provide individual files or directories:
 hister import file ~/notes ~/Documents/report.pdf
 ```
 
-Snapshot extraction happens in the command line process. Only the extracted document fields are sent through `/api/add`. Hister does not send or retain the original file bytes, and it does not monitor snapshots for later changes.
+Snapshot extraction happens in the command line process. Only the extracted document fields are sent through `/api/add`. Hister does not send or retain the original file bytes, and it does not monitor snapshots for later changes. Running this command is therefore not a substitute for the automatic tracking provided by the server file watcher.
 
 Remote file documents use a `remote-file://SOURCE/absolute/path` identity. The default source is the client hostname. Set a stable name when hostnames may change or when several clients have the same paths:
 

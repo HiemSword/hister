@@ -5,7 +5,7 @@ title: 'File Types'
 description: 'Review supported local files, directory filters, document formats, and archive import behavior.'
 ---
 
-Hister can index local files from configured directories and from explicit imports. Directory indexing is controlled by the `indexer.directories` configuration.
+Hister can index local files from configured directories and from explicit imports. Directory indexing is controlled by the `indexer.directories` configuration. After you configure a directory, restart the Hister server. It automatically scans the directory at startup and watches it for later changes. You do not need to run `hister import file` for this automatic tracking.
 
 ## Local File Indexing
 
@@ -57,6 +57,6 @@ The `hister import file` command accepts these file formats:
 | Saved HTML page     | `.html`, `.htm`            | Extracts the original page URL when present.                 |
 | Local file snapshot | Any supported local format | Extracts content locally and submits a remote file document. |
 
-When importing a directory, Hister reads matching files recursively. With no input path, it uses every configured watched directory and applies its filters.
+When importing a directory, Hister reads matching files recursively. With no input path, it uses every configured watched directory and applies its filters. This creates remote file snapshots and is intended only for directories that the command line client can access but the server cannot. The snapshots are not watched for changes.
 
-Use `hister import file` for the PDF, DOCX, Markdown, Org mode, and plain text formats listed under local file indexing. Extraction occurs on the client, so this also works when the server cannot access the filesystem.
+Use `hister import file` to create snapshots of the PDF, DOCX, Markdown, Org mode, and plain text formats listed under local file indexing. Extraction occurs on the client, so this also works when the server cannot access the filesystem.

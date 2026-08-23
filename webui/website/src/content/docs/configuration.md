@@ -720,7 +720,7 @@ When multiple filters are specified, they are applied in order: excludes first, 
 
 ## Local Directory Indexing
 
-The `indexer.directories` option lets you index local files so they appear alongside your browser history in search results. Files are indexed automatically when the server starts, running in the background so the server is available immediately. A file watcher monitors configured directories for changes, so new and modified files are indexed automatically without needing to restart the server.
+The `indexer.directories` option lets you index local files so they appear alongside your browser history in search results. You do not need to run `hister import file` for configured directories that the server can access. After changing this configuration, restart the Hister server. It scans the directories automatically at startup, then a file watcher monitors them so new and modified files are indexed without another restart.
 
 ```yaml
 indexer:
@@ -772,7 +772,7 @@ Files are indexed recursively, with the following rules:
 
 Changes to indexed directories are picked up automatically by the file watcher, no server restart is needed. On server start, only files that have been modified since they were last indexed are re-processed. File results appear with the domain `local` and are served through the Hister web interface directly.
 
-When a configured directory is available to the command line client but not to the server, run `hister import file` with no path arguments. It applies these directory rules locally, extracts matching content, and creates remote file snapshots through the normal add API. The original bytes are not sent. These snapshots are not watched or removed automatically.
+Only when a configured directory is available to the command line client but not to the server, run `hister import file` with no path arguments. It applies these directory rules locally, extracts matching content, and creates remote file snapshots through the normal add API. The original bytes are not sent. This fallback does not enable tracking. These snapshots are not watched or removed automatically.
 
 When `delete_on_remove: true` is set on a directory, deleting or renaming a file on the filesystem also removes it from the index automatically. This is opt-in and disabled by default.
 
