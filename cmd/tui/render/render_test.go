@@ -1,3 +1,7 @@
+// SPDX-FileContributor: 4evy <git@evy.pink>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package render
 
 import (
@@ -11,8 +15,9 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -28,7 +33,8 @@ func renderModel() *model.Model {
 
 func prepareSearchRender(m *model.Model) {
 	m.Ready = true
-	m.Viewport = viewport.New(1, 1)
+	m.Viewport = viewport.New(viewport.WithWidth(1), viewport.WithHeight(1))
+	m.Viewport.FillHeight = true
 	ResizeSearchViewports(m)
 	RefreshViewport(m)
 	if m.DetailsURL != "" {
@@ -175,6 +181,35 @@ func TestOverlayCompositorPreservesCanvasSize(t *testing.T) {
 	}
 	if !strings.Contains(view, "dialog") {
 		t.Fatal("composited overlay is missing foreground content")
+	}
+}
+
+func TestDimCanvasPreservesNestedStyles(t *testing.T) {
+	background := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("red") + " plain"
+	canvas := lipgloss.NewCanvas(lipgloss.Width(background), 1)
+	canvas.Compose(lipgloss.NewCompositor(lipgloss.NewLayer(background)))
+	dimCanvas(canvas)
+	for x := range canvas.Width() {
+		cell := canvas.CellAt(x, 0)
+		if cell == nil || cell.Style.Attrs&uv.AttrFaint == 0 {
+			t.Fatalf("background cell %d was not dimmed: %#v", x, cell)
+		}
+	}
+}
+
+func TestScrollbarUsesViewportScrollMetrics(t *testing.T) {
+	m := renderModel()
+	m.Viewport = viewport.New(viewport.WithWidth(10), viewport.WithHeight(3))
+	m.Viewport.SetContent("one\ntwo\nthree\nfour\nfive\nsix")
+
+	top := strings.Split(ansi.Strip(Scrollbar(m)), "\n")
+	if len(top) != 3 || top[0] != "█" {
+		t.Fatalf("top scrollbar = %#v", top)
+	}
+	m.Viewport.GotoBottom()
+	bottom := strings.Split(ansi.Strip(Scrollbar(m)), "\n")
+	if len(bottom) != 3 || bottom[2] != "█" {
+		t.Fatalf("bottom scrollbar = %#v", bottom)
 	}
 }
 
