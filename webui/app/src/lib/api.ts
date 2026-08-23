@@ -38,6 +38,7 @@ export interface ExtractorInfo {
 }
 
 let _config: AppConfig | null = null;
+let _configRequest: Promise<AppConfig> | null = null;
 let _csrf: string = '';
 
 function apiPath(path: string): string {
@@ -78,20 +79,33 @@ export function getUserId(): number | undefined {
 
 export function resetConfig(): void {
   _config = null;
+  _configRequest = null;
 }
 
 export async function fetchConfig(): Promise<AppConfig> {
   if (_config) return _config;
-  clearLegacyAccessToken();
-  const res = await fetch(apiPath('/config'), { credentials: 'include' });
-  if (res.status === 403) {
-    redirectToAuth();
-    throw new Error('Authentication required');
+  if (_configRequest) return _configRequest;
+
+  const request = (async () => {
+    clearLegacyAccessToken();
+    const res = await fetch(apiPath('/config'), { credentials: 'include' });
+    if (res.status === 403) {
+      redirectToAuth();
+      throw new Error('Authentication required');
+    }
+    const tok = res.headers.get('X-CSRF-Token');
+    if (tok) _csrf = tok;
+    return (await res.json()) as AppConfig;
+  })();
+  _configRequest = request;
+
+  try {
+    const config = await request;
+    if (_configRequest === request) _config = config;
+    return config;
+  } finally {
+    if (_configRequest === request) _configRequest = null;
   }
-  const tok = res.headers.get('X-CSRF-Token');
-  if (tok) _csrf = tok;
-  _config = await res.json();
-  return _config!;
 }
 
 export async function login(username: string, password: string): Promise<{ username: string }> {
@@ -106,7 +120,7 @@ export async function login(username: string, password: string): Promise<{ usern
   if (!res.ok) {
     throw new Error('Invalid credentials');
   }
-  _config = null;
+  resetConfig();
   return res.json();
 }
 
@@ -123,7 +137,7 @@ export async function loginWithToken(token: string): Promise<void> {
     throw new Error('Invalid credentials');
   }
   clearLegacyAccessToken();
-  _config = null;
+  resetConfig();
 }
 
 export async function logout(): Promise<void> {
@@ -131,7 +145,7 @@ export async function logout(): Promise<void> {
     await apiFetch('/logout', { method: 'POST', redirectOnForbidden: false });
   } finally {
     clearLegacyAccessToken();
-    _config = null;
+    resetConfig();
   }
 }
 
