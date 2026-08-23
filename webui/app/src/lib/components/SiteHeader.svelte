@@ -3,19 +3,21 @@
   import { base } from '$app/paths';
   import { Button } from '@hister/components/ui/button';
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
-  import { toggleMode, mode } from 'mode-watcher';
+  import { userPrefersMode } from 'mode-watcher';
   import {
     ExternalLink,
     Keyboard,
     LogIn,
     LogOut,
     Menu,
+    Monitor,
     Moon,
     Sun,
     UserRound,
   } from '@lucide/svelte';
   import type { AppConfig } from '$lib/api';
   import { showHelp } from '$lib/stores';
+  import { setThemePreference, type ThemePreference } from '$lib/theme';
 
   let { config, onLogout }: { config: AppConfig | null; onLogout: () => void } = $props();
 
@@ -40,6 +42,8 @@
 
   const menuItem =
     'font-space text-text-brand-muted data-[highlighted]:bg-muted-surface data-[highlighted]:text-text-brand cursor-pointer rounded-none px-3 py-2 text-xs font-semibold tracking-wider uppercase';
+  const themeMenuItem =
+    'font-space text-text-brand-muted focus:bg-muted-surface focus:text-text-brand cursor-pointer rounded-none py-2 text-xs font-semibold tracking-wider uppercase';
   const navLink =
     'primary-link font-space relative p-3 text-[11px] font-semibold tracking-[1px] uppercase no-underline transition-colors hover:no-underline md:p-6 md:text-[13px] md:tracking-[1.5px]';
 
@@ -164,15 +168,29 @@
             Keyboard shortcuts
           </DropdownMenu.Item>
         {/if}
-        <DropdownMenu.Item class={menuItem} onSelect={() => toggleMode()} textValue="Toggle theme">
-          {#if mode.current === 'dark'}
+        <DropdownMenu.Label
+          class="font-space text-text-brand-muted px-3 pt-2 pb-1 text-[10px] font-bold tracking-widest uppercase"
+        >
+          Appearance
+        </DropdownMenu.Label>
+        <DropdownMenu.RadioGroup
+          aria-label="Appearance"
+          value={userPrefersMode.current}
+          onValueChange={(value) => setThemePreference(value as ThemePreference)}
+        >
+          <DropdownMenu.RadioItem class={themeMenuItem} value="system">
+            <Monitor class="size-4" />
+            Automatic
+          </DropdownMenu.RadioItem>
+          <DropdownMenu.RadioItem class={themeMenuItem} value="light">
             <Sun class="size-4" />
-            Light theme
-          {:else}
+            Light
+          </DropdownMenu.RadioItem>
+          <DropdownMenu.RadioItem class={themeMenuItem} value="dark">
             <Moon class="size-4" />
-            Dark theme
-          {/if}
-        </DropdownMenu.Item>
+            Dark
+          </DropdownMenu.RadioItem>
+        </DropdownMenu.RadioGroup>
 
         {#if showProfile || showLogin || showLogout}
           <DropdownMenu.Separator class="bg-border-brand-muted mx-0 my-2 h-[2px]" />

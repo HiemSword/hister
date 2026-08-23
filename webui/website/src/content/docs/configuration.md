@@ -31,7 +31,7 @@ description: 'Explore every configuration section, option, default value, enviro
       name: 'color_scheme',
       type: 'string',
       defaultValue: 'automatic',
-      description: 'Default web UI color scheme. Supported values are automatic, dark, and light. Visitors can override this default with the theme toggle.',
+      description: 'Default web UI color scheme. Supported values are automatic, dark, and light. Visitors can override this default from the appearance menu.',
     },
     {
       name: 'search_url',

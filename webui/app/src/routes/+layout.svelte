@@ -1,20 +1,18 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { ModeWatcher, modeStorageKey, setMode } from 'mode-watcher';
+  import { ModeWatcher, setMode } from 'mode-watcher';
   import SiteHeader from '$lib/components/SiteHeader.svelte';
   import { Toaster, toast } from '@hister/components/ui/sonner';
   import { fetchConfig, logout, resetConfig, type AppConfig } from '$lib/api';
   import { setFlashMessage, showFlashMessage } from '$lib/flash';
+  import { getStoredThemePreference } from '$lib/theme';
   import { base } from '$app/paths';
   import '../style.css';
 
   let { children } = $props();
 
   let config = $state<AppConfig | null>(null);
-  // The library persists its generated system default during initialization.
-  // Only dark and light indicate an explicit visitor choice.
-  const storedMode = localStorage.getItem(modeStorageKey.current);
-  const hasStoredModeOverride = storedMode === 'dark' || storedMode === 'light';
+  const storedThemePreference = getStoredThemePreference();
 
   onMount(() => {
     void showQueuedNotice();
@@ -22,9 +20,9 @@
     fetchConfig()
       .then((c) => {
         config = c;
-        if (!hasStoredModeOverride) {
-          setMode(c.colorScheme === 'automatic' ? 'system' : c.colorScheme);
-        }
+        setMode(
+          storedThemePreference ?? (c.colorScheme === 'automatic' ? 'system' : c.colorScheme),
+        );
       })
       .catch(() => {});
   });
@@ -52,7 +50,10 @@
 </script>
 
 {#if config}
-  <ModeWatcher defaultMode={config.colorScheme === 'automatic' ? 'system' : config.colorScheme} />
+  <ModeWatcher
+    defaultMode={storedThemePreference ??
+      (config.colorScheme === 'automatic' ? 'system' : config.colorScheme)}
+  />
 {/if}
 <Toaster position="top-center" richColors offset="4.75rem" />
 
