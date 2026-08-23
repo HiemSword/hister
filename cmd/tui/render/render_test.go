@@ -234,6 +234,26 @@ func TestHeaderCompactsTabsAndOwnsTheirHitboxes(t *testing.T) {
 	}
 }
 
+func TestThemePickerPresentsTerminalAppearance(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := renderModel()
+	picker := ansi.Strip(ThemePicker(m))
+
+	if !strings.Contains(picker, "Mode: [terminal]") {
+		t.Fatalf("theme picker does not present terminal mode:\n%s", picker)
+	}
+}
+
+func TestSettingsExposeTerminalAppearance(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := renderModel()
+	settings := ansi.Strip(Settings(m))
+
+	if !strings.Contains(settings, "Appearance  Terminal (pass-through)") {
+		t.Fatalf("settings do not expose terminal appearance:\n%s", settings)
+	}
+}
+
 func TestLongOverlaysFitShortTerminal(t *testing.T) {
 	m := renderModel()
 	m.Height = 14

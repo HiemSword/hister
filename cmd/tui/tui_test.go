@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/asciimoo/hister/cmd/tui/model"
+	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 
 	tea "charm.land/bubbletea/v2"
@@ -28,6 +29,7 @@ func TestViewDeclaresTerminalFeatures(t *testing.T) {
 	a := testApp(t)
 	// Keep this test independent of the configured default appearance. The
 	// View contract is that a named theme declares its resolved screen colors.
+	a.m.Cfg.TUI.ColorScheme = "dark"
 	a.m.ThemeName = "test-theme"
 	a.m.BackgroundColor = color.Black
 	a.m.ForegroundColor = color.White
@@ -51,5 +53,32 @@ func TestNoColorViewLeavesTerminalColorsUnset(t *testing.T) {
 
 	if v.BackgroundColor != nil || v.ForegroundColor != nil {
 		t.Fatalf("no-color view declared terminal colors: background=%v foreground=%v", v.BackgroundColor, v.ForegroundColor)
+	}
+}
+
+func TestTerminalAppearanceLeavesTerminalColorsUnset(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	a := testApp(t)
+	v := a.View()
+
+	if a.m.ThemeName != theme.TerminalName {
+		t.Fatalf("theme = %q, want terminal", a.m.ThemeName)
+	}
+	if v.BackgroundColor != nil || v.ForegroundColor != nil {
+		t.Fatalf("terminal view declared screen colors: background=%v foreground=%v", v.BackgroundColor, v.ForegroundColor)
+	}
+}
+
+func TestFullThemeNamedTerminalStillDeclaresScreenColors(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	a := testApp(t)
+	a.m.Cfg.TUI.ColorScheme = "dark"
+	a.m.ThemeName = theme.TerminalName
+	a.m.BackgroundColor = color.Black
+	a.m.ForegroundColor = color.White
+	v := a.View()
+
+	if v.BackgroundColor == nil || v.ForegroundColor == nil {
+		t.Fatal("full theme named terminal did not declare screen colors")
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
 	smodel "github.com/asciimoo/hister/server/model"
+
+	"charm.land/lipgloss/v2"
 )
 
 func testConfig() *config.Config {
@@ -138,5 +140,25 @@ func TestNestedOverlayRestoresEachReturnState(t *testing.T) {
 	m.DismissOverlay()
 	if m.State != StateResults || m.PrevState != StateResults {
 		t.Fatalf("details returned to state=%s previous=%s, want results/results", m.State, m.PrevState)
+	}
+}
+
+func TestTerminalAppearanceReachesTextEntryComponents(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := InitialModel(testConfig())
+	if m.ThemeName != "terminal" {
+		t.Fatalf("theme = %q, want terminal", m.ThemeName)
+	}
+
+	inputStyles := m.TextInput.Styles()
+	for label, foreground := range map[string]any{
+		"focused input":    inputStyles.Focused.Text.GetForeground(),
+		"blurred input":    inputStyles.Blurred.Text.GetForeground(),
+		"focused textarea": m.AddText.Styles().Focused.Text.GetForeground(),
+		"blurred textarea": m.AddText.Styles().Blurred.Text.GetForeground(),
+	} {
+		if _, ok := foreground.(lipgloss.NoColor); !ok {
+			t.Errorf("%s foreground = %T, want lipgloss.NoColor", label, foreground)
+		}
 	}
 }
