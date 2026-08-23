@@ -5,7 +5,7 @@
   import { Input } from '@hister/components/ui/input';
   import { Button } from '@hister/components/ui/button';
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
-  import { MoreVertical, Pin, PinOff, Tag, Trash2 } from '@lucide/svelte';
+  import { MoreVertical, Pin, PinOff, Tag, Trash2, Unlink } from '@lucide/svelte';
 
   interface Props {
     url: string;
@@ -14,7 +14,9 @@
     resultState: ResultState;
     query: string;
     pinned?: boolean;
+    historyResult?: boolean;
     canWrite?: boolean;
+    onForget?: () => void;
     onDelete?: () => void;
     removeResult: (url: string) => void;
     removeResultsByDomain: (domain: string) => void;
@@ -27,7 +29,9 @@
     resultState,
     query,
     pinned = false,
+    historyResult = false,
     canWrite = true,
+    onForget,
     onDelete,
     removeResult,
     removeResultsByDomain,
@@ -100,6 +104,25 @@
               </Button>
             </div>
             <hr />
+          {/if}
+          {#if historyResult}
+            <p class="font-inter text-text-brand-muted text-xs">
+              Stops prioritizing this result for “{query}”. The document remains indexed.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              class="border-hister-rose text-hister-rose hover:bg-hister-rose/10 w-full border-[2px] text-xs"
+              onclick={async () => {
+                if (await resultState.forgetForQuery(url, query)) {
+                  open = false;
+                  onForget?.();
+                }
+              }}
+            >
+              <Unlink class="size-3.5" />
+              Forget for this query
+            </Button>
           {/if}
         </div>
         <SkipRuleActions

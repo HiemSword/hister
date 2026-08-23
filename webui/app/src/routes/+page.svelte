@@ -134,6 +134,7 @@
     finalScore?: number;
     sourceType?: 'keyword' | 'semantic' | 'both';
     isPinned: boolean;
+    isHistoryResult: boolean;
   }
 
   let config: Config = $state({
@@ -524,8 +525,9 @@
     ...(lastResults?.history ?? []).map((r): DisplayResult => ({
       ...r,
       isPinned: r.pinned ?? false,
+      isHistoryResult: true,
     })),
-    ...mergedResults.map((r): DisplayResult => ({ ...r, isPinned: false })),
+    ...mergedResults.map((r): DisplayResult => ({ ...r, isPinned: false, isHistoryResult: false })),
   ]);
 
   // Faceted navigation — lazy fetch on dropdown open
@@ -2330,7 +2332,11 @@
 
               {#if displayResults.length > 0}
                 {#each displayResults as r, i}
-                  {@const color = r.isPinned ? 'hister-teal' : 'hister-cyan'}
+                  {@const color = r.isPinned
+                    ? 'hister-teal'
+                    : r.isHistoryResult
+                      ? 'hister-amber'
+                      : 'hister-cyan'}
                   {@const state = getResultState(r.url, r.label)}
                   <article
                     data-result
@@ -2370,7 +2376,9 @@
                           resultState={state}
                           {query}
                           pinned={r.isPinned}
+                          historyResult={r.isHistoryResult}
                           canWrite={config.canWrite}
+                          onForget={() => sendQuery(query)}
                           onDelete={r.isPinned || !config.canWrite
                             ? undefined
                             : () => deleteResult(r.url)}
@@ -2428,6 +2436,13 @@
                               variant="secondary"
                               class="bg-hister-teal/10 text-hister-teal h-4 border-0 px-1.5 py-0"
                               >pinned</Badge
+                            >
+                          {:else if r.isHistoryResult}
+                            <Badge
+                              variant="secondary"
+                              class="bg-hister-amber/10 text-hister-amber h-4 border-0 px-1.5 py-0"
+                              title="Prioritized because you opened it for this query"
+                              >prioritized</Badge
                             >
                           {:else if r.updated}
                             <span

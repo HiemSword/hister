@@ -60,6 +60,25 @@ export class ResultState {
     }
   }
 
+  async forgetForQuery(url: string, query: string): Promise<boolean> {
+    if (!query) return false;
+    try {
+      const res = await apiFetch('/history', {
+        method: 'POST',
+        headers: { 'Content-type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ url, query, delete: true }),
+      });
+      if (!res.ok) throw new Error('Failed to forget result for query');
+      this.actionsMessage = 'Result forgotten for this query.';
+      this.actionsError = false;
+      return true;
+    } catch {
+      this.actionsMessage = 'Failed to forget result for this query.';
+      this.actionsError = true;
+      return false;
+    }
+  }
+
   async addSkipRule(
     url: string,
     domain: string,
