@@ -1,4 +1,3 @@
-// SPDX-FileContributor: FlameFlag <github@flameflag.dev>
 // SPDX-FileContributor: 4evy <git@evy.pink>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
