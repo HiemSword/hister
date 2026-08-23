@@ -9,6 +9,7 @@ import (
 	"time"
 
 	readabilityrender "codeberg.org/readeck/go-readability/v2/render"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/net/html"
 
 	"github.com/asciimoo/hister/cmd/tui/model"
@@ -67,7 +68,12 @@ func ResultDetailsContent(m *model.Model) string {
 	}
 	content = sanitizeTerminalText(content)
 	lines = append(lines, m.Styles.SecText.UnsetItalic().UnsetFaint().Render(content))
-	return strings.Join(lines, "\n")
+	return wrapDetailsText(strings.Join(lines, "\n"), max(1, DetailsPaneWidth(m)-2))
+}
+
+func wrapDetailsText(content string, width int) string {
+	width = max(1, width)
+	return ansi.Hardwrap(ansi.Wordwrap(content, width, "/"), width, false)
 }
 
 func detailsDocument(m *model.Model, url string) *document.Document {

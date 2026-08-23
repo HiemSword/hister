@@ -46,7 +46,7 @@ func DispatchCommonAction(m *model.Model, action config.Action) (tea.Cmd, bool) 
 		}
 		return startSearch(m, m.FlashHint(config.ActionToggleSort)), true
 	case config.ActionToggleSemantic:
-		if !m.Cfg.SemanticSearch.Enable {
+		if !m.SemanticEnabled {
 			return m.Notify("Semantic search is not enabled on this server"), true
 		}
 		m.SemanticOn = !m.SemanticOn
@@ -143,19 +143,24 @@ func loadDetails(m *model.Model, focusPreview, activate bool) tea.Cmd {
 		return m.Notify("Nothing selected")
 	}
 	title := m.GetSelectedTitle()
+	startSpinner := !m.DetailsLoading
 	m.ResetDetails()
 	m.DetailsURL = u
 	m.DetailsHintTitle = title
 	m.DetailsLoading = true
 	m.DetailsFocused = focusPreview
-	m.Details.SetContent(render.ResultDetailsContent(m))
-	m.Details.GotoTop()
 	if activate && m.State != model.StateDetails {
 		m.OpenOverlay(model.StateDetails)
 	}
 	render.ResizeSearchViewports(m)
+	m.Details.SetContent(render.ResultDetailsContent(m))
+	m.Details.GotoTop()
 	render.RefreshAndScroll(m)
-	return tea.Batch(m.FetchPreviewCmd(u), m.Spinner.Tick)
+	cmds := []tea.Cmd{m.QueuePreviewCmd(u)}
+	if startSpinner {
+		cmds = append(cmds, m.Spinner.Tick)
+	}
+	return tea.Batch(cmds...)
 }
 
 func OpenLabelEditor(m *model.Model) tea.Cmd {
@@ -220,9 +225,9 @@ func SwitchTab(m *model.Model, action config.Action) tea.Cmd {
 		return nil
 	}
 	m.ResetDetails()
+	m.SetBaseState(model.StateResults)
 	m.Workspace.GotoTop()
 	m.TextInput.Blur()
-	m.State = model.StateResults
 	var cmd tea.Cmd
 	switch m.ActiveTab {
 	case model.TabSearch:
@@ -266,8 +271,8 @@ func doSearch(m *model.Model) tea.Cmd {
 		Limit:             m.Limit + 1,
 		Sort:              m.SortMode,
 		SemanticEnabled:   m.SemanticOn,
-		SemanticThreshold: m.Cfg.SemanticSearch.SimilarityThreshold,
-		SemanticWeight:    m.Cfg.SemanticSearch.SemanticWeight,
+		SemanticThreshold: m.SemanticThreshold,
+		SemanticWeight:    m.SemanticWeight,
 	})
 }
 

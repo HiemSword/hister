@@ -131,7 +131,7 @@ func ThemePickerKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		p, _ := theme.ResolvePalette(&m.Cfg.TUI, m.IsDarkBg)
 		m.ApplyTheme(p)
 		render.RefreshViewport(m)
-		m.State = m.PrevState
+		m.DismissOverlay()
 		if m.State == model.StateInput {
 			return m.TextInput.Focus()
 		}
@@ -156,7 +156,7 @@ func SettingsKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		m.SettingsEditErr = ""
 	case config.ActionToggleFocus:
 		if key == "esc" {
-			m.State = m.PrevState
+			m.DismissOverlay()
 			if m.State == model.StateInput {
 				return m.TextInput.Focus()
 			}
@@ -233,14 +233,14 @@ func ContextMenuKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		return executeContextMenuAction(m)
 	case config.ActionToggleFocus:
 		if key == "esc" {
-			m.State = m.PrevState
+			m.DismissOverlay()
 		}
 	}
 	return nil
 }
 
 func executeContextMenuAction(m *model.Model) tea.Cmd {
-	m.State = m.PrevState
+	m.DismissOverlay()
 	option, ok := model.MenuOptionAt(m.MenuSelIdx)
 	if !ok {
 		return nil
@@ -271,7 +271,7 @@ func executeContextMenuAction(m *model.Model) tea.Cmd {
 			m.PrioritizeInput.SetValue("")
 			m.PrioritizeInput.Focus()
 			m.PrioritizeBtnIdx = 1
-			m.State = model.StatePrioritizeInput
+			m.OpenOverlay(model.StatePrioritizeInput)
 		}
 	}
 	return nil
@@ -289,18 +289,18 @@ func PrioritizeInputKeys(m *model.Model, msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case key == "esc" || (action == config.ActionToggleFocus && key == "esc"):
 		m.PrioritizeInput.Blur()
-		m.State = m.PrevState
+		m.DismissOverlay()
 		return nil
 	case action == config.ActionOpenResult:
 		if m.PrioritizeBtnIdx == 0 {
 			// Cancel
 			m.PrioritizeInput.Blur()
-			m.State = m.PrevState
+			m.DismissOverlay()
 			return nil
 		}
 		pattern := strings.TrimSpace(m.PrioritizeInput.Value())
 		m.PrioritizeInput.Blur()
-		m.State = m.PrevState
+		m.DismissOverlay()
 		if pattern != "" {
 			return m.PrioritizeRuleCmd(pattern)
 		}

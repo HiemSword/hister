@@ -25,6 +25,7 @@ func TestVisibleDocumentsMergesAndRanksSemanticResults(t *testing.T) {
 	semanticOnly := &document.Document{URL: "https://three.test", Domain: "three.test"}
 	m := InitialModel(testConfig())
 	m.SemanticOn = true
+	m.SemanticWeight = 0.4
 	m.Results = &indexer.Results{
 		History:   []*smodel.URLCount{{URL: "https://history.test"}},
 		Documents: []*document.Document{keywordOne, keywordTwo},
@@ -121,5 +122,21 @@ func TestDismissDialogReturnsToOpenDetailsPane(t *testing.T) {
 
 	if m.State != StateDetails {
 		t.Fatalf("dialog returned to %s, want details", m.State)
+	}
+}
+
+func TestNestedOverlayRestoresEachReturnState(t *testing.T) {
+	m := InitialModel(testConfig())
+	m.State = StateResults
+	m.OpenOverlay(StateDetails)
+	m.OpenOverlay(StateHelp)
+
+	m.DismissOverlay()
+	if m.State != StateDetails || m.PrevState != StateResults {
+		t.Fatalf("help returned to state=%s previous=%s, want details/results", m.State, m.PrevState)
+	}
+	m.DismissOverlay()
+	if m.State != StateResults || m.PrevState != StateResults {
+		t.Fatalf("details returned to state=%s previous=%s, want results/results", m.State, m.PrevState)
 	}
 }

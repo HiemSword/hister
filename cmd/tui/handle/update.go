@@ -56,9 +56,15 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			m.Viewport.SetContent("")
 			m.Ready = true
 			render.ResizeSearchViewports(m)
+			if render.DetailsVisible(m) {
+				m.Details.SetContent(render.ResultDetailsContent(m))
+			}
 			return tea.ClearScreen
 		}
 		render.ResizeSearchViewports(m)
+		if render.DetailsVisible(m) {
+			m.Details.SetContent(render.ResultDetailsContent(m))
+		}
 		render.RefreshAndScroll(m)
 		if changed {
 			return tea.ClearScreen
@@ -83,7 +89,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			}
 			return ResultsKeys(m, msg)
 		case model.StateHelp:
-			m.State = m.PrevState
+			m.DismissOverlay()
 			if m.State == model.StateInput {
 				return m.TextInput.Focus()
 			}
@@ -141,8 +147,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			return m.Notify("Could not delete result: " + msg.Err.Error())
 		}
 		m.ResetDetails()
-		m.State = model.StateResults
-		m.PrevState = model.StateResults
+		m.SetBaseState(model.StateResults)
 		render.ResizeSearchViewports(m)
 		render.RefreshAndScroll(m)
 		return tea.Batch(doSearch(m), m.Notify("Result deleted"))
@@ -202,14 +207,35 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		render.RefreshAndScroll(m)
 		return network.ListenToWebSocket(m.WsChan, m.WsDone)
 
-	case model.PreviewFetchedMsg:
-		if msg.URL != m.DetailsURL {
+	case model.ServerConfigFetchedMsg:
+		if msg.Err != nil {
+			return m.Notify("Could not load server capabilities: " + msg.Err.Error())
+		}
+		if msg.Config != nil {
+			m.SemanticEnabled = msg.Config.SemanticEnabled
+			m.SemanticThreshold = msg.Config.SimilarityThreshold
+			m.SemanticWeight = msg.Config.SemanticWeight
+			if !m.SemanticEnabled {
+				m.SemanticOn = false
+			}
+		}
+
+	case model.PreviewDebounceMsg:
+		if msg.ID != m.DetailsRequestID || msg.URL != m.DetailsURL {
 			return nil
 		}
-		m.DetailsLoading = false
-		m.DetailsErr = msg.Err
-		m.DetailsPreview = msg.Preview
-		m.Details.SetContent(render.ResultDetailsContent(m))
+		m.DetailsPendingReady = true
+		return m.StartPendingPreviewCmd()
+
+	case model.PreviewFetchedMsg:
+		m.DetailsFetching = false
+		if msg.URL == m.DetailsURL {
+			m.DetailsLoading = false
+			m.DetailsErr = msg.Err
+			m.DetailsPreview = msg.Preview
+			m.Details.SetContent(render.ResultDetailsContent(m))
+		}
+		return m.StartPendingPreviewCmd()
 
 	case model.WsConnectedMsg:
 		if msg.Conn != nil {

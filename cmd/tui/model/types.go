@@ -49,11 +49,19 @@ type SearchQuery struct {
 
 // Message types for bubbletea
 type (
-	ResultsMsg          struct{ Results *indexer.Results }
-	ErrMsg              struct{ Err error }
-	WsConnectedMsg      struct{ Conn *websocket.Conn }
-	WsDisconnectedMsg   struct{ Err error }
-	ReconnectMsg        struct{}
+	ResultsMsg             struct{ Results *indexer.Results }
+	ErrMsg                 struct{ Err error }
+	WsConnectedMsg         struct{ Conn *websocket.Conn }
+	WsDisconnectedMsg      struct{ Err error }
+	ReconnectMsg           struct{}
+	ServerConfigFetchedMsg struct {
+		Config *client.ServerConfig
+		Err    error
+	}
+	PreviewDebounceMsg struct {
+		URL string
+		ID  uint64
+	}
 	HintClearMsg        struct{}
 	SettingsErrClearMsg struct{}
 	NoticeClearMsg      struct{ ID uint64 }

@@ -92,6 +92,28 @@ func New(baseURL string, opts ...Option) *Client {
 	return c
 }
 
+// FetchConfig retrieves capabilities from the server the client is connected
+// to. This avoids assuming that local configuration describes a remote server.
+func (c *Client) FetchConfig() (_ *ServerConfig, err error) {
+	req, err := c.newRequest(http.MethodGet, "/api/config", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer closeBody(resp, &err)
+	if err = checkStatus(resp); err != nil {
+		return nil, err
+	}
+	var serverConfig ServerConfig
+	if err = json.NewDecoder(resp.Body).Decode(&serverConfig); err != nil {
+		return nil, err
+	}
+	return &serverConfig, nil
+}
+
 const legacyMaxBatchBodyBytes int64 = 5 << 20
 
 // MaxBatchBodyBytes returns the server advertised batch request limit. Servers

@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func renderModel() *model.Model {
@@ -101,6 +102,27 @@ func TestResultDetailsRendersHTMLAsReadableText(t *testing.T) {
 	}
 	if strings.Contains(content, "bad()") {
 		t.Fatalf("details content includes script text:\n%s", content)
+	}
+}
+
+func TestResultDetailsWrapsDocumentTextToViewport(t *testing.T) {
+	m := renderModel()
+	m.Width = 27
+	m.DetailsURL = "https://example.com/article-with-a-very-long-path"
+	m.DetailsPreview = &client.PreviewResponse{
+		Title:   "A long readable article title",
+		Content: "Document text should wrap at natural word boundaries instead of being clipped by the details viewport. supercalifragilisticexpialidocious",
+	}
+
+	content := ResultDetailsContent(m)
+	contentWidth := DetailsPaneWidth(m) - 2
+	if len(strings.Split(content, "\n")) < 8 {
+		t.Fatalf("details content was not wrapped:\n%s", content)
+	}
+	for i, line := range strings.Split(content, "\n") {
+		if width := ansi.StringWidth(line); width > contentWidth {
+			t.Fatalf("line %d width = %d, want <= %d: %q", i, width, contentWidth, line)
+		}
 	}
 }
 
