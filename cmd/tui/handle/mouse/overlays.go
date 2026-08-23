@@ -20,6 +20,11 @@ const (
 	closeBtnOffset = 4 // right edge to close btn start (btn + border)
 )
 
+const (
+	settingsAppearanceRowY = 3
+	settingsListStartY     = 6
+)
+
 // Theme picker layout (relative to overlay origin)
 const (
 	themeModeRowY        = 2 // relative Y of mode row
@@ -77,11 +82,34 @@ func (h *Handler) overlayClick(m *model.Model, msg Event) tea.Cmd {
 			return overlayDialog(m, msg, ox, oy, ow)
 		case model.StatePrioritizeInput:
 			return overlayPrioritize(m, msg, ox, oy, ow)
+		case model.StateSettings:
+			return h.settingsInside(m, msg, oy)
 		}
 		return nil
 	}
 
 	return h.closeOverlayForState(m)
+}
+
+func (h *Handler) settingsInside(m *model.Model, msg Event, oy int) tea.Cmd {
+	relY := msg.Y - oy
+	if relY == settingsAppearanceRowY {
+		if m.SettingsIdx == 0 {
+			return h.CycleAppearance(m)
+		}
+		m.SettingsIdx = 0
+		return nil
+	}
+	if relY >= settingsListStartY && relY < settingsListStartY+m.SettingsCount {
+		idx := 1 + m.SettingsStart + relY - settingsListStartY
+		if idx == m.SettingsIdx {
+			m.SettingsEditMode = true
+			m.SettingsEditErr = ""
+		} else {
+			m.SettingsIdx = idx
+		}
+	}
+	return nil
 }
 
 // --- overlay click handlers ---
@@ -133,9 +161,8 @@ func themePickerInside(m *model.Model, msg Event, ox, oy int) tea.Cmd {
 
 	if relY == themeModeRowY {
 		relX := msg.X - ox - themeModeLeftPad
-		modes := []string{"auto", "dark", "light"}
 		cur := themeModeLabelStartX
-		for _, mode := range modes {
+		for _, mode := range theme.ColorSchemeModes {
 			labelW := len(mode) + themeModeLabelPad
 			if relX >= cur && relX < cur+labelW {
 				m.ThemePickerMode = mode
@@ -170,6 +197,7 @@ func themePickerInside(m *model.Model, msg Event, ox, oy int) tea.Cmd {
 				idx := l.start + relY - l.items.Y
 				m.ThemePickerSection = l.section
 				*l.idx = idx
+				leaveTerminalModeForThemeList(m)
 				if p, ok := theme.GetPalette(l.names[idx]); ok {
 					m.ApplyTheme(p)
 					render.RefreshViewport(m)
@@ -182,16 +210,41 @@ func themePickerInside(m *model.Model, msg Event, ox, oy int) tea.Cmd {
 }
 
 func (h *Handler) themePickerScroll(m *model.Model, msg Event) tea.Cmd {
+	if wheelDelta(msg) == 0 {
+		return nil
+	}
 	darkNames, lightNames := theme.ClassifyThemes()
+	wasTerminal := m.ThemePickerMode == theme.TerminalName
+	leaveTerminalModeForThemeList(m)
 	if m.ThemePickerSection == 0 {
+		oldIdx := m.DarkThemeIdx
 		handleScroll(msg, &m.DarkThemeIdx, 0, len(darkNames)-1, func() { h.PreviewTheme(m) })
+		if wasTerminal && oldIdx == m.DarkThemeIdx {
+			h.PreviewTheme(m)
+		}
 	} else {
+		oldIdx := m.LightThemeIdx
 		handleScroll(msg, &m.LightThemeIdx, 0, len(lightNames)-1, func() { h.PreviewTheme(m) })
+		if wasTerminal && oldIdx == m.LightThemeIdx {
+			h.PreviewTheme(m)
+		}
 	}
 	return nil
 }
 
 func settingsScroll(m *model.Model, msg Event) tea.Cmd {
-	handleScroll(msg, &m.SettingsIdx, 0, len(m.Cfg.Hotkeys.TUI)-1, nil)
+	handleScroll(msg, &m.SettingsIdx, 0, len(m.Cfg.Hotkeys.TUI), nil)
 	return nil
+}
+
+func leaveTerminalModeForThemeList(m *model.Model) {
+	if m.ThemePickerMode != theme.TerminalName {
+		return
+	}
+	if m.ThemePickerSection == 0 {
+		m.ThemePickerMode = "dark"
+	} else {
+		m.ThemePickerMode = "light"
+	}
+	m.Cfg.TUI.ColorScheme = m.ThemePickerMode
 }

@@ -535,3 +535,9 @@ func TestMergeDefaultTUIHotkeysPreservesCustomBindings(t *testing.T) {
 		t.Fatalf("new semantic binding = %q, want %q", got, ActionToggleSemantic)
 	}
 }
+
+func TestDefaultTUIUsesTerminalAppearance(t *testing.T) {
+	if got := DefaultTUIConfig.ColorScheme; got != "terminal" {
+		t.Fatalf("default TUI color scheme = %q, want terminal", got)
+	}
+}

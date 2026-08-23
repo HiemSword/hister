@@ -168,8 +168,8 @@ description: 'Explore every configuration section, option, default value, enviro
     {
       name: 'color_scheme',
       type: 'string',
-      defaultValue: 'auto',
-      description: 'Color scheme mode. Use auto to follow the system, or select dark or light.',
+      defaultValue: 'terminal',
+      description: 'Appearance mode. Terminal inherits your terminal background, foreground, and ANSI palette. Use auto to choose the configured dark or light Hister theme, or select dark or light explicitly.',
     },
     {
       name: 'themes_dir',
@@ -981,7 +981,7 @@ TUI-specific settings are stored in a separate `tui.yaml` file in the same direc
 ```yaml
 dark_theme: 'tokyonight'
 light_theme: 'catppuccin-latte'
-color_scheme: 'auto'
+color_scheme: 'terminal'
 
 hotkeys:
   ctrl+c: 'quit'
@@ -1007,6 +1007,13 @@ hotkeys:
   alt+4: 'tab_add'
 ```
 
+The default `terminal` mode does not paint a terminal-wide foreground or
+background. Normal text inherits your terminal colors, while semantic accents
+use its configurable ANSI palette. Set `color_scheme` to `auto`, `dark`, or
+`light` to opt into Hister's full built-in themes. The Settings overlay
+(`ctrl+s`) exposes this as **Appearance — Terminal (pass-through)**; press Enter
+to cycle modes, or use `ctrl+t` for the full theme picker.
+
 ### TUI Hotkeys
 
 TUI keyboard shortcuts are configured in `tui.yaml` under the `hotkeys` section. See the [tui.yaml example](#tui-configuration) above.
@@ -1024,7 +1031,7 @@ TUI keyboard shortcuts are configured in `tui.yaml` under the `hotkeys` section.
 | `edit_label`      | Edit the selected document label                                            |
 | `delete_result`   | Delete the selected entry from the index                                    |
 | `toggle_theme`    | Open the interactive theme picker overlay                                   |
-| `toggle_settings` | Open the keybinding editor overlay                                          |
+| `toggle_settings` | Open appearance and keybinding settings                                     |
 | `toggle_sort`     | Toggle domain-based sorting for search results                              |
 | `toggle_semantic` | Toggle semantic search when enabled                                         |
 | `tab_search`      | Switch to the Search tab                                                    |

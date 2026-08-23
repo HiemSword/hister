@@ -8,6 +8,7 @@ import (
 	"embed"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -81,6 +82,25 @@ var (
 	themeRegistry = map[string]Palette{}
 	themeOrder    []string
 )
+
+const TerminalName = "terminal"
+
+// ColorSchemeModes is ordered for both presentation and keyboard cycling.
+// Terminal comes first because it is the least surprising default: it leaves
+// the terminal-wide foreground and background alone and derives accents from
+// the user's ANSI palette.
+var ColorSchemeModes = []string{TerminalName, "auto", "dark", "light"}
+
+// TerminalPalette maps semantic colors to the terminal's configurable ANSI
+// palette. Empty base colors intentionally resolve to lipgloss.NoColor, so
+// normal text and every background inherit the user's terminal defaults.
+var TerminalPalette = Palette{
+	Name:   TerminalName,
+	Base00: "", Base01: "", Base02: "",
+	Base03: "8", Base04: "8", Base05: "", Base06: "", Base07: "",
+	Base08: "1", Base09: "3", Base0A: "3", Base0B: "2",
+	Base0C: "6", Base0D: "4", Base0E: "5", Base0F: "5",
+}
 
 func init() {
 	entries, err := embeddedThemes.ReadDir("themes")
@@ -187,7 +207,7 @@ func IsLightPalette(p Palette) bool {
 }
 
 func ThemeNames() []string {
-	return themeOrder
+	return slices.Clone(themeOrder)
 }
 
 func GetPalette(name string) (Palette, bool) {
@@ -211,6 +231,9 @@ func ClassifyThemes() (darkNames, lightNames []string) {
 func ResolvePalette(tui *config.TUI, isDark bool) (Palette, string) {
 	if os.Getenv("NO_COLOR") != "" {
 		return Palette{Name: "no-color"}, "no-color"
+	}
+	if tui.ColorScheme == TerminalName {
+		return TerminalPalette, TerminalName
 	}
 
 	var chosen string
@@ -237,4 +260,11 @@ func ResolvePalette(tui *config.TUI, isDark bool) (Palette, string) {
 		return p, p.Name
 	}
 	return Palette{Name: "catppuccin-mocha"}, "catppuccin-mocha"
+}
+
+func NextColorSchemeMode(current string) string {
+	if i := slices.Index(ColorSchemeModes, current); i >= 0 {
+		return ColorSchemeModes[(i+1)%len(ColorSchemeModes)]
+	}
+	return ColorSchemeModes[0]
 }

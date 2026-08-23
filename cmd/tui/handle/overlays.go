@@ -66,12 +66,25 @@ func previewTheme(m *model.Model) {
 	}
 }
 
+func leaveTerminalModeForThemeList(m *model.Model) {
+	if m.ThemePickerMode != theme.TerminalName {
+		return
+	}
+	if m.ThemePickerSection == 0 {
+		m.ThemePickerMode = "dark"
+	} else {
+		m.ThemePickerMode = "light"
+	}
+	m.Cfg.TUI.ColorScheme = m.ThemePickerMode
+}
+
 func ThemePickerKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	darkNames, lightNames := theme.ClassifyThemes()
 	action := m.Keys.Action(msg)
 	key := msg.String()
 	switch action {
 	case config.ActionScrollUp:
+		leaveTerminalModeForThemeList(m)
 		if m.ThemePickerSection == 0 {
 			if m.DarkThemeIdx > 0 {
 				m.DarkThemeIdx--
@@ -83,6 +96,7 @@ func ThemePickerKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 		}
 		previewTheme(m)
 	case config.ActionScrollDown:
+		leaveTerminalModeForThemeList(m)
 		if m.ThemePickerSection == 0 {
 			if m.DarkThemeIdx < len(darkNames)-1 {
 				m.DarkThemeIdx++
@@ -103,19 +117,12 @@ func ThemePickerKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 			} else {
 				m.ThemePickerSection = 0
 			}
-			previewTheme(m)
+			if m.ThemePickerMode != theme.TerminalName {
+				previewTheme(m)
+			}
 		}
 	case config.ActionToggleTheme:
-		switch m.ThemePickerMode {
-		case "auto":
-			m.ThemePickerMode = "dark"
-		case "dark":
-			m.ThemePickerMode = "light"
-		case "light":
-			m.ThemePickerMode = "auto"
-		default:
-			m.ThemePickerMode = "auto"
-		}
+		m.ThemePickerMode = theme.NextColorSchemeMode(m.ThemePickerMode)
 		m.Cfg.TUI.ColorScheme = m.ThemePickerMode
 		p, _ := theme.ResolvePalette(&m.Cfg.TUI, m.IsDarkBg)
 		m.ApplyTheme(p)
@@ -131,6 +138,9 @@ func ThemePickerKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 		p, _ := theme.ResolvePalette(&m.Cfg.TUI, m.IsDarkBg)
 		m.ApplyTheme(p)
 		render.RefreshViewport(m)
+		if err := m.Cfg.SaveTUIConfig(); err != nil {
+			log.Warn().Err(err).Msg("failed to save TUI theme")
+		}
 		m.DismissOverlay()
 		if m.State == model.StateInput {
 			return m.TextInput.Focus()
@@ -143,7 +153,7 @@ func SettingsKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	if m.SettingsEditMode {
 		return settingsEditKey(m, msg)
 	}
-	totalItems := len(m.Cfg.Hotkeys.TUI)
+	totalItems := len(m.Cfg.Hotkeys.TUI) + 1
 	action := m.Keys.Action(msg)
 	key := msg.String()
 	switch action {
@@ -152,8 +162,13 @@ func SettingsKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	case config.ActionScrollDown:
 		model.ScrollIdx(&m.SettingsIdx, 1, 0, totalItems-1)
 	case config.ActionOpenResult:
+		if m.SettingsIdx == 0 {
+			return cycleAppearanceMode(m)
+		}
 		m.SettingsEditMode = true
 		m.SettingsEditErr = ""
+	case config.ActionToggleTheme:
+		m.OpenThemePicker()
 	case config.ActionToggleFocus:
 		if key == "esc" {
 			m.DismissOverlay()
@@ -165,13 +180,31 @@ func SettingsKeys(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
+func cycleAppearanceMode(m *model.Model) tea.Cmd {
+	mode := m.Cfg.TUI.ColorScheme
+	if mode == "" {
+		mode = theme.TerminalName
+	}
+	m.Cfg.TUI.ColorScheme = theme.NextColorSchemeMode(mode)
+	m.ThemePickerMode = m.Cfg.TUI.ColorScheme
+	p, _ := theme.ResolvePalette(&m.Cfg.TUI, m.IsDarkBg)
+	m.ApplyTheme(p)
+	render.RefreshViewport(m)
+	if err := m.Cfg.SaveTUIConfig(); err != nil {
+		log.Warn().Err(err).Msg("failed to save TUI appearance")
+		m.SettingsEditErr = "Could not save appearance"
+	}
+	return nil
+}
+
 func settingsEditKey(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 	newKey := msg.String()
 	if newKey == "esc" {
 		items := m.SortedSettingsItems()
-		if m.SettingsIdx >= 0 && m.SettingsIdx < len(items) {
-			action := items[m.SettingsIdx].Action
-			oldKey := items[m.SettingsIdx].Key
+		itemIdx := m.SettingsIdx - 1
+		if itemIdx >= 0 && itemIdx < len(items) {
+			action := items[itemIdx].Action
+			oldKey := items[itemIdx].Key
 			defaults := config.DefaultTUIHotkeys
 			defaultKey := ""
 			for k, v := range defaults {
@@ -199,12 +232,13 @@ func settingsEditKey(m *model.Model, msg tea.KeyPressMsg) tea.Cmd {
 		return tea.Tick(2*time.Second, func(_ time.Time) tea.Msg { return model.SettingsErrClearMsg{} })
 	}
 	items := m.SortedSettingsItems()
-	if m.SettingsIdx < 0 || m.SettingsIdx >= len(items) {
+	itemIdx := m.SettingsIdx - 1
+	if itemIdx < 0 || itemIdx >= len(items) {
 		m.SettingsEditMode = false
 		return nil
 	}
-	oldKey := items[m.SettingsIdx].Key
-	action := items[m.SettingsIdx].Action
+	oldKey := items[itemIdx].Key
+	action := items[itemIdx].Action
 
 	if existingAction, exists := m.Cfg.Hotkeys.TUI[newKey]; exists && existingAction != string(action) {
 		m.SettingsEditErr = fmt.Sprintf("%s already bound to %s", component.FormatKey(newKey), existingAction)

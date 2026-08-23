@@ -9,6 +9,7 @@ import (
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/cmd/tui/network"
 	"github.com/asciimoo/hister/cmd/tui/render"
+	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 
 	"charm.land/bubbles/v2/textinput"
@@ -36,7 +37,7 @@ func (a *app) View() tea.View {
 	v := tea.NewView(render.View(a.m))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
-	if a.m.ThemeName != "no-color" {
+	if a.m.Cfg.TUI.ColorScheme != theme.TerminalName && a.m.ThemeName != "no-color" {
 		v.BackgroundColor = a.m.BackgroundColor
 		v.ForegroundColor = a.m.ForegroundColor
 	}

@@ -312,9 +312,8 @@ func CloseThemePickerWithRevert(m *model.Model) tea.Cmd {
 	m.Cfg.TUI.LightTheme = m.OrigLightTheme
 	m.Cfg.TUI.ColorScheme = m.OrigColorScheme
 	m.ThemePickerMode = m.OrigColorScheme
-	if p, ok := theme.GetPalette(m.OrigThemeName); ok {
-		m.ApplyTheme(p)
-		render.RefreshViewport(m)
-	}
+	p, _ := theme.ResolvePalette(&m.Cfg.TUI, m.IsDarkBg)
+	m.ApplyTheme(p)
+	render.RefreshViewport(m)
 	return CloseOverlay(m)
 }

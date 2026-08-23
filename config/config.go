@@ -269,7 +269,7 @@ var DefaultTUIHotkeys = map[string]string{
 var DefaultTUIConfig = TUI{
 	DarkTheme:   "tokyonight",
 	LightTheme:  "catppuccin-latte",
-	ColorScheme: "auto",
+	ColorScheme: "terminal",
 }
 
 func copyMap(m map[string]string) map[string]string {

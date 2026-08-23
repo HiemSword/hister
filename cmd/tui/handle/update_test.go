@@ -7,10 +7,14 @@ package handle
 import (
 	"image/color"
 	"maps"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui/model"
+	"github.com/asciimoo/hister/cmd/tui/theme"
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/indexer"
@@ -72,6 +76,123 @@ func TestBackgroundColorSelectsMatchingAutomaticTheme(t *testing.T) {
 	}
 	if m.ThemeName != m.Cfg.TUI.DarkTheme {
 		t.Fatalf("theme = %q, want dark theme %q", m.ThemeName, m.Cfg.TUI.DarkTheme)
+	}
+}
+
+func TestThemePickerCyclesThroughTerminalMode(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := handleTestModel(t)
+	m.OpenThemePicker()
+
+	ThemePickerKeys(m, tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
+	if m.ThemePickerMode != "auto" || m.Cfg.TUI.ColorScheme != "auto" {
+		t.Fatalf("first mode cycle = %q/%q, want auto", m.ThemePickerMode, m.Cfg.TUI.ColorScheme)
+	}
+
+	m.ThemePickerMode = "light"
+	m.Cfg.TUI.ColorScheme = "light"
+	ThemePickerKeys(m, tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
+	if m.ThemePickerMode != theme.TerminalName || m.ThemeName != theme.TerminalName {
+		t.Fatalf("wrapped mode cycle = %q/%q, want terminal", m.ThemePickerMode, m.ThemeName)
+	}
+}
+
+func TestThemeListNavigationLeavesTerminalMode(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := handleTestModel(t)
+	m.OpenThemePicker()
+
+	ThemePickerKeys(m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if m.ThemePickerMode != "dark" || m.Cfg.TUI.ColorScheme != "dark" {
+		t.Fatalf("theme navigation left mode = %q/%q, want dark", m.ThemePickerMode, m.Cfg.TUI.ColorScheme)
+	}
+	if m.ThemeName == theme.TerminalName {
+		t.Fatal("theme navigation did not preview the dark theme")
+	}
+}
+
+func TestThemePickerCancelRestoresTerminalAppearance(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := handleTestModel(t)
+	m.OpenThemePicker()
+
+	p, ok := theme.GetPalette(m.Cfg.TUI.DarkTheme)
+	if !ok {
+		t.Fatalf("dark theme %q is unavailable", m.Cfg.TUI.DarkTheme)
+	}
+	m.ApplyTheme(p)
+	CloseThemePickerWithRevert(m)
+
+	if m.ThemeName != theme.TerminalName || m.Cfg.TUI.ColorScheme != theme.TerminalName {
+		t.Fatalf("cancel restored %q/%q, want terminal", m.ThemeName, m.Cfg.TUI.ColorScheme)
+	}
+}
+
+func TestSettingsCycleAndPersistAppearance(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	m := handleTestModel(t)
+	m.State = model.StateSettings
+	m.SettingsIdx = 0
+
+	for _, want := range []string{"auto", "dark", "light", theme.TerminalName} {
+		SettingsKeys(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		if m.Cfg.TUI.ColorScheme != want {
+			t.Fatalf("appearance cycle = %q, want %q", m.Cfg.TUI.ColorScheme, want)
+		}
+	}
+
+	data, err := os.ReadFile(filepath.Join(configHome, "hister", "tui.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "color_scheme: terminal") {
+		t.Fatalf("saved appearance is not terminal:\n%s", data)
+	}
+}
+
+func TestSettingsOpenThemePickerAndReturn(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := handleTestModel(t)
+	m.OpenOverlay(model.StateSettings)
+
+	SettingsKeys(m, tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
+	if m.State != model.StateThemePicker {
+		t.Fatalf("theme shortcut opened %s, want theme picker", m.State)
+	}
+	CloseThemePickerWithRevert(m)
+	if m.State != model.StateSettings {
+		t.Fatalf("theme picker returned to %s, want settings", m.State)
+	}
+}
+
+func TestSettingsKeybindingEditUsesBindingIndex(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	m := handleTestModel(t)
+	m.State = model.StateSettings
+	items := m.SortedSettingsItems()
+	if len(items) == 0 {
+		t.Fatal("no keybindings available")
+	}
+	oldKey, action := items[0].Key, items[0].Action
+	m.SettingsIdx = 1
+
+	SettingsKeys(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.SettingsEditMode {
+		t.Fatal("binding row did not enter edit mode")
+	}
+	SettingsKeys(m, tea.KeyPressMsg{Code: tea.KeyF12})
+
+	if m.SettingsEditMode {
+		t.Fatal("binding edit mode did not close")
+	}
+	if _, exists := m.Cfg.Hotkeys.TUI[oldKey]; exists {
+		t.Fatalf("old key %q remains bound", oldKey)
+	}
+	if got := m.Cfg.Hotkeys.TUI["f12"]; got != string(action) {
+		t.Fatalf("f12 binding = %q, want %q", got, action)
 	}
 }
 

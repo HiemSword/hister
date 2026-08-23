@@ -128,7 +128,7 @@ type Model struct {
 	ThemeName          string
 	ThemePickerIdx     int
 	OrigThemeName      string
-	ThemePickerMode    string // "auto", "dark", "light"
+	ThemePickerMode    string // "terminal", "auto", "dark", "light"
 	ThemePickerSection int    // 0=dark, 1=light
 	DarkThemeIdx       int
 	LightThemeIdx      int
@@ -149,6 +149,8 @@ type Model struct {
 	SettingsIdx      int
 	SettingsEditMode bool
 	SettingsEditErr  string
+	SettingsStart    int
+	SettingsCount    int
 
 	// Tab bar
 	ActiveTab int // 0=Search, 1=History, 2=Rules, 3=Add
@@ -263,7 +265,7 @@ func InitialModel(cfg *config.Config) *Model {
 	m.Workspace = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	m.Workspace.FillHeight = true
 	if m.ThemePickerMode == "" {
-		m.ThemePickerMode = "auto"
+		m.ThemePickerMode = theme.TerminalName
 	}
 	return m
 }
@@ -787,6 +789,10 @@ func newInput(placeholder string, charLimit int, width int, st theme.Styles) tex
 
 func applyInputStyles(inp *textinput.Model, st theme.Styles) {
 	s := inp.Styles()
+	s.Focused.Text = st.Text
+	s.Blurred.Text = st.Text
+	s.Focused.Prompt = st.Text
+	s.Blurred.Prompt = st.Text
 	s.Focused.Placeholder = st.Placeholder
 	s.Focused.Suggestion = st.Placeholder
 	s.Blurred.Placeholder = st.Placeholder
@@ -797,6 +803,14 @@ func applyInputStyles(inp *textinput.Model, st theme.Styles) {
 
 func applyTextareaStyles(input *textarea.Model, st theme.Styles) {
 	s := input.Styles()
+	s.Focused.Base = st.Text
+	s.Blurred.Base = st.Text
+	s.Focused.Text = st.Text
+	s.Blurred.Text = st.Text
+	s.Focused.Prompt = st.Text
+	s.Blurred.Prompt = st.Text
+	s.Focused.EndOfBuffer = st.Text
+	s.Blurred.EndOfBuffer = st.Text
 	s.Focused.Placeholder = st.Placeholder
 	s.Blurred.Placeholder = st.Placeholder
 	s.Focused.CursorLine = lipgloss.NewStyle()
