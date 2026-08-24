@@ -5,8 +5,47 @@
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import Database from '@lucide/svelte/icons/database';
   import Globe from '@lucide/svelte/icons/globe';
+  import Bitcoin from '@lucide/svelte/icons/bitcoin';
+  import Coins from '@lucide/svelte/icons/coins';
+  import Copy from '@lucide/svelte/icons/copy';
+  import Check from '@lucide/svelte/icons/check';
   import { Button } from '@hister/components';
   import Seo from '$lib/Seo.svelte';
+
+  const cryptoWallets = [
+    {
+      name: 'Bitcoin',
+      ticker: 'BTC',
+      address: '1JwT5gEFYP358GvcdNCKbwgTKvwFujnHSF',
+      href: 'bitcoin:1JwT5gEFYP358GvcdNCKbwgTKvwFujnHSF',
+      icon: Bitcoin,
+      color: 'bg-hister-amber',
+    },
+    {
+      name: 'Ethereum',
+      ticker: 'ETH',
+      address: '0x4Eb476D91c92b744600F282F7B727e8b46eDe8Bb',
+      href: 'ethereum:0x4Eb476D91c92b744600F282F7B727e8b46eDe8Bb',
+      icon: Coins,
+      color: 'bg-hister-indigo',
+    },
+  ];
+
+  let copiedAddress = $state<string | null>(null);
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function copyWalletAddress(address: string) {
+    try {
+      await navigator.clipboard.writeText(address);
+      copiedAddress = address;
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => {
+        copiedAddress = null;
+      }, 1500);
+    } catch {
+      copiedAddress = null;
+    }
+  }
 
   const futurePlans = [
     {
@@ -54,7 +93,7 @@
       Whether through code, suggestions or sponsorship, every contribution helps make private,
       powerful search available to everyone.
     </p>
-    <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div class="grid w-full grid-cols-1 gap-6 md:grid-cols-2">
       <!-- Sponsor -->
       <div
         class="border-brutal-border brutal-press-card flex flex-col gap-6 border-[3px] bg-white p-8 md:p-10"
@@ -116,6 +155,68 @@
             View on GitHub
             <ArrowRight size={16} class="shrink-0" />
           </Button>
+        </div>
+      </div>
+
+      <!-- Cryptocurrency -->
+      <div
+        class="border-brutal-border brutal-press-card flex flex-col gap-6 border-[3px] bg-white p-8 md:col-span-2 md:p-10"
+      >
+        <div class="flex flex-col gap-3">
+          <h3
+            class="font-space text-2xl font-black tracking-[-0.5px] text-[var(--text-primary)] uppercase"
+          >
+            Donate with Cryptocurrency
+          </h3>
+          <p class="font-inter text-base leading-[1.7] text-[var(--text-secondary)]">
+            Send BTC or ETH directly to support Hister development.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+          {#each cryptoWallets as wallet}
+            {@const WalletIcon = wallet.icon}
+            <div class="border-brutal-border flex min-w-0 flex-col gap-4 border-[3px] p-5">
+              <div class="flex items-center gap-3">
+                <div class="border-brutal-border {wallet.color} border-[3px] p-2.5">
+                  <WalletIcon size={24} class="text-white" />
+                </div>
+                <div>
+                  <h4 class="font-space text-lg font-black text-[var(--text-primary)] uppercase">
+                    {wallet.name}
+                  </h4>
+                  <p
+                    class="font-space text-xs font-bold tracking-[1.5px] text-[var(--text-secondary)] uppercase"
+                  >
+                    {wallet.ticker}
+                  </p>
+                </div>
+              </div>
+
+              <a
+                href={wallet.href}
+                class="font-fira text-sm leading-relaxed font-semibold break-all text-[var(--text-primary)] underline hover:no-underline"
+                title="Open {wallet.ticker} wallet"
+              >
+                {wallet.address}
+              </a>
+
+              <button
+                type="button"
+                class="font-space border-brutal-border brutal-press inline-flex w-fit cursor-pointer items-center gap-2 border-[3px] bg-[var(--text-primary)] px-4 py-2 text-xs font-bold tracking-[1px] text-white uppercase"
+                aria-label="Copy {wallet.ticker} wallet address"
+                onclick={() => copyWalletAddress(wallet.address)}
+              >
+                {#if copiedAddress === wallet.address}
+                  <Check size={15} class="shrink-0" />
+                  <span aria-live="polite">Copied</span>
+                {:else}
+                  <Copy size={15} class="shrink-0" />
+                  Copy address
+                {/if}
+              </button>
+            </div>
+          {/each}
         </div>
       </div>
     </div>
