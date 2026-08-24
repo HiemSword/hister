@@ -5,6 +5,7 @@
   import Puzzle from '@lucide/svelte/icons/puzzle';
   import Database from '@lucide/svelte/icons/database';
   import Globe from '@lucide/svelte/icons/globe';
+  import Network from '@lucide/svelte/icons/network';
   import Bitcoin from '@lucide/svelte/icons/bitcoin';
   import Coins from '@lucide/svelte/icons/coins';
   import Copy from '@lucide/svelte/icons/copy';
@@ -49,6 +50,14 @@
 
   const futurePlans = [
     {
+      icon: Network,
+      title: 'Federation and Distributed Search',
+      desc: 'Connect trusted Hister instances so they can exchange selected public results, datasets, and index metadata while administrators remain in control of what they share and import.',
+      href: null,
+      linkLabel: null,
+      color: 'bg-hister-amber',
+    },
+    {
       icon: Puzzle,
       title: 'Content-Specific Extractors',
       desc: 'Add extractors for more content types to improve integration and index quality so Hister understands the web deeply, not just superficially.',
@@ -60,8 +69,8 @@
       icon: Database,
       title: 'Thematic Pre-Indexed Databases',
       desc: 'Create infrastructure for importable, pre-indexed databases organized by topic, letting users quickly expand their local index with curated, relevant content.',
-      href: null,
-      linkLabel: null,
+      href: '/datasets',
+      linkLabel: 'Explore datasets',
       color: 'bg-hister-teal',
     },
     {
@@ -271,11 +280,12 @@
 
     <div class="flex flex-col gap-6">
       {#each futurePlans as plan, i}
+        {@const PlanIcon = plan.icon}
         <div
           class="border-brutal-border grid grid-cols-1 overflow-hidden border-[3px] md:grid-cols-[auto_1fr]"
         >
           <div class="{plan.color} flex items-center justify-center p-8 md:w-[120px]">
-            <svelte:component this={plan.icon} size={40} class="text-white" />
+            <PlanIcon size={40} class="text-white" />
           </div>
           <div class="bg-brutal-card flex flex-col justify-center gap-3 p-8 md:p-10">
             <h3
