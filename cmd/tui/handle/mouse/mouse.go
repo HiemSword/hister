@@ -191,10 +191,16 @@ func (h *Handler) Handle(m *model.Model, msg tea.MouseMsg) tea.Cmd {
 		return h.nonSearchTab(m, event)
 	}
 
-	if cmd, ok := handleScroll(event, &m.SelectedIdx, 0, m.GetTotalResults()-1, func() {
-		render.RefreshAndScroll(m)
-	}); ok {
-		return cmd
+	// Scrolling the results is a focus-changing interaction: selection and
+	// keyboard routing must never disagree. Ignore wheel events over the input,
+	// header, and hints instead of silently moving the result selection.
+	if wheelDelta(event) != 0 && vpRegion(m).Contains(event) {
+		m.FocusSearchResults()
+		if cmd, ok := handleScroll(event, &m.SelectedIdx, 0, m.GetTotalResults()-1, func() {
+			render.RefreshAndScroll(m)
+		}); ok {
+			return cmd
+		}
 	}
 
 	if event.Action == actionClick && event.Button == tea.MouseRight {
@@ -323,6 +329,7 @@ func rightClick(m *model.Model, msg Event) tea.Cmd {
 	if idx < 0 || idx >= m.GetTotalResults() || idx == m.Limit {
 		return nil
 	}
+	m.FocusSearchResults()
 	m.SelectedIdx = idx
 	render.RefreshViewport(m)
 	offX, offY := render.MenuOverlayOffset(m)
@@ -341,6 +348,7 @@ func inputRow(m *model.Model, msg Event) tea.Cmd {
 func scrollbarClick(m *model.Model, msg Event) tea.Cmd {
 	vp := vpRegion(m)
 	if vp.ContainsY(msg.Y) {
+		m.FocusSearchResults()
 		m.ScrollbarDragging = true
 		scrollToPercent(m, msg.Y)
 	}
@@ -364,10 +372,7 @@ func (h *Handler) viewportClick(m *model.Model, msg Event) tea.Cmd {
 	if idx < 0 || idx >= m.GetTotalResults() {
 		return nil
 	}
-	if m.State == model.StateInput {
-		m.State = model.StateResults
-		m.TextInput.Blur()
-	}
+	m.FocusSearchResults()
 	if idx == m.SelectedIdx {
 		if m.SelectedIdx == m.Limit {
 			m.Limit += model.ResultsPageSize

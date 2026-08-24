@@ -6,6 +6,7 @@ package render
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/asciimoo/hister/cmd/tui/model"
@@ -26,9 +27,9 @@ func ThemePicker(m *model.Model) string {
 	m.ThemeLightStart, m.ThemeLightCount = lightStart, lightEnd-lightStart
 
 	maxNameW := 0
-	for _, name := range append(darkNames, lightNames...) {
-		if len(name) > maxNameW {
-			maxNameW = len(name)
+	for _, name := range slices.Concat(darkNames, lightNames) {
+		if width := lipgloss.Width(name); width > maxNameW {
+			maxNameW = width
 		}
 	}
 
@@ -46,16 +47,20 @@ func ThemePicker(m *model.Model) string {
 		var slines []string
 		for i, name := range names[start:end] {
 			absoluteIdx := start + i
-			marker := "  "
-			if name == configuredName {
-				marker = "● "
+			focusMarker := "  "
+			if focused && absoluteIdx == cursorIdx {
+				focusMarker = "▸ "
 			}
-			paddedName := name + strings.Repeat(" ", maxNameW-len(name))
+			configuredMarker := "  "
+			if name == configuredName {
+				configuredMarker = "● "
+			}
+			paddedName := name + strings.Repeat(" ", maxNameW-lipgloss.Width(name))
 			swatch := ""
 			if p, ok := theme.GetPalette(name); ok {
 				swatch = renderSwatch(p)
 			}
-			content := marker + paddedName + "  " + swatch
+			content := focusMarker + configuredMarker + paddedName + "  " + swatch
 			if focused && absoluteIdx == cursorIdx {
 				slines = append(slines, m.Styles.ThemePickerSelected.Render(content))
 			} else {
@@ -66,7 +71,8 @@ func ThemePicker(m *model.Model) string {
 	}
 
 	var lines []string
-	lines = append(lines, modeRow, "")
+	lines = append(lines, modeRow)
+	lines = append(lines, m.Styles.Gray.Render("Terminal mode keeps your terminal colors (pass-through)."), "")
 
 	darkFocused := m.ThemePickerSection == 0
 	headerStyle := m.Styles.Gray
@@ -146,8 +152,8 @@ func Settings(m *model.Model) string {
 	maxKeyW := 0
 	for _, it := range items {
 		fk := FormatKey(it.Key)
-		if len([]rune(fk)) > maxKeyW {
-			maxKeyW = len([]rune(fk))
+		if width := lipgloss.Width(fk); width > maxKeyW {
+			maxKeyW = width
 		}
 	}
 
@@ -165,13 +171,13 @@ func Settings(m *model.Model) string {
 	for i, it := range items[start:end] {
 		absoluteIdx := start + i + 1
 		if absoluteIdx == m.SettingsIdx && m.SettingsEditMode {
-			lines = append(lines, m.Styles.ThemePickerSelected.Render("  Press a key...  →  "+string(it.Action)))
+			lines = append(lines, m.Styles.ThemePickerSelected.Render("▸ Press a key...  →  "+string(it.Action)))
 		} else {
 			fk := FormatKey(it.Key)
-			padded := fk + strings.Repeat(" ", maxKeyW-len([]rune(fk)))
+			padded := fk + strings.Repeat(" ", maxKeyW-lipgloss.Width(fk))
 			row := "  " + padded + "  →  " + string(it.Action)
 			if absoluteIdx == m.SettingsIdx {
-				lines = append(lines, m.Styles.ThemePickerSelected.Render(row))
+				lines = append(lines, m.Styles.ThemePickerSelected.Render("▸ "+padded+"  →  "+string(it.Action)))
 			} else {
 				lines = append(lines, m.Styles.ThemePickerItem.Render(row))
 			}
@@ -183,12 +189,12 @@ func Settings(m *model.Model) string {
 	}
 	lines = append(lines, "")
 	if m.SettingsEditMode {
-		lines = append(lines, m.Styles.Hint.Render("press any key to bind  esc cancel"))
+		lines = append(lines, m.Styles.Hint.Render("press any key to bind  esc restore default"))
 	} else {
 		sNav := m.Keys.BestKey(config.ActionScrollDown)
 		sEdit := m.Keys.BestKey(config.ActionOpenResult)
 		sTheme := m.Keys.BestKey(config.ActionToggleTheme)
-		action := "edit"
+		action := "rebind"
 		if m.SettingsIdx == 0 {
 			action = "change mode"
 		}

@@ -34,10 +34,10 @@ var overlayDefs = map[model.ViewState]overlayDef{
 
 func View(m *model.Model) string {
 	if !m.Ready {
-		return "Loading..."
+		return "Starting Hister…"
 	}
 	if m.Width < 20 || m.Height < 14 {
-		return "Terminal too small"
+		return fmt.Sprintf("Terminal too small\nNeed at least 20×14; current size is %d×%d.", m.Width, m.Height)
 	}
 
 	main := MainView(m)
@@ -80,10 +80,12 @@ func MainView(m *model.Model) string {
 	}
 
 	pStyle := m.Styles.PromptActive
+	prompt := "▶"
 	if m.State != model.StateInput {
 		pStyle = m.Styles.PromptBlur
+		prompt = "·"
 	}
-	inputLine := "  " + pStyle.Render("❯") + " " + m.TextInput.View()
+	inputLine := "  " + pStyle.Render(prompt) + " " + m.TextInput.View()
 	ResizeSearchViewports(m)
 	body := SearchBody(m)
 
@@ -170,10 +172,15 @@ func resultsViewport(m *model.Model, width, height int) string {
 func DetailsPane(m *model.Model, width, height int) string {
 	innerW := max(1, width-2)
 	headerStyle := m.Styles.Gray
-	if m.DetailsFocused || !DetailsSplit(m) {
+	previewFocused := m.DetailsFocused || !DetailsSplit(m)
+	if previewFocused {
 		headerStyle = m.Styles.HelpHeader
 	}
-	title := headerStyle.Render("Preview")
+	previewLabel := "  Preview"
+	if previewFocused {
+		previewLabel = "▶ Preview"
+	}
+	title := headerStyle.Render(previewLabel)
 	if m.DetailsLoading {
 		title += " " + m.Styles.Spin.Render(m.Spinner.View())
 	}
@@ -210,10 +217,14 @@ func normalizeBlock(content string, width, height int) string {
 
 func Header(m *model.Model) string {
 	w := max(1, m.Width-1)
-	compact := w < 56
+	compact := w < 64
 	var tabs []string
 	m.TabTargets = nil
-	x := model.TabBarLeftPad
+	prefix := " "
+	if !compact {
+		prefix += m.Styles.Brand.Render("hister") + "  "
+	}
+	x := lipgloss.Width(prefix)
 	for _, definition := range model.Tabs {
 		label := definition.Name
 		if compact {
@@ -232,7 +243,7 @@ func Header(m *model.Model) string {
 		})
 		x += tabWidth + model.TabGap
 	}
-	tabBar := " " + strings.Join(tabs, " ")
+	tabBar := prefix + strings.Join(tabs, " ")
 	appendMode := func(full, short string) {
 		label := full
 		if compact {
@@ -250,28 +261,22 @@ func Header(m *model.Model) string {
 		appendMode("[semantic]", "S")
 	}
 
-	cs := m.Styles.Disc.Render("● disconnected")
+	connection := m.Styles.Disc.Render("● offline · retrying…")
 	if m.WsReady {
-		cs = m.Styles.Conn.Render("● connected")
+		connection = m.Styles.Conn.Render("●")
 	}
 
-	var right string
+	var status string
 	if m.Notice != "" {
-		right = m.Styles.Conn.Render("◆ " + m.Notice)
-	} else if m.ConnError != nil && !m.WsReady {
-		right = m.Styles.Disc.Render(m.ConnError.Error())
-	} else if m.IsSearching {
-		right = cs + "  " + m.Styles.Spin.Render(m.Spinner.View()+" searching…")
+		status = renderNotice(m)
+	} else if !m.WsReady {
+		status = connection
 	} else {
-		countStr := "0 results"
-		if m.Results != nil {
-			visibleCount := len(m.Results.History) + len(m.VisibleDocuments())
-			countStr = fmt.Sprintf("%d results", max(int(m.Results.Total)+len(m.Results.History), visibleCount))
-			if m.Results.SearchDuration != "" {
-				countStr += "  " + m.Results.SearchDuration
-			}
-		}
-		right = cs + "  " + m.Styles.Status.Render(countStr)
+		status = workspaceStatus(m)
+	}
+	right := status
+	if m.WsReady && m.Notice == "" {
+		right = connection + "  " + status
 	}
 
 	leftW := lipgloss.Width(tabBar)
@@ -282,6 +287,66 @@ func Header(m *model.Model) string {
 	}
 	pad := max(0, w-leftW-rightW)
 	return tabBar + strings.Repeat(" ", pad) + right
+}
+
+func renderNotice(m *model.Model) string {
+	return renderStatusMessage(m, m.Notice, m.NoticeKind)
+}
+
+func renderStatusMessage(m *model.Model, message string, kind model.NoticeKind) string {
+	prefix := "◆ "
+	style := m.Styles.Status
+	switch kind {
+	case model.NoticeSuccess:
+		prefix, style = "✓ ", m.Styles.Conn
+	case model.NoticeWarning:
+		prefix, style = "! ", m.Styles.Spin
+	case model.NoticeError:
+		prefix, style = "! ", m.Styles.Disc
+	}
+	return style.Render(prefix + sanitizeTerminalLine(message))
+}
+
+func workspaceStatus(m *model.Model) string {
+	switch m.ActiveTab {
+	case model.TabHistory:
+		if m.HistoryLoading {
+			return m.Styles.Spin.Render(m.Spinner.View() + " loading history…")
+		}
+		return m.Styles.Status.Render(itemCount(len(m.HistoryItems), "history item"))
+	case model.TabRules:
+		if m.RulesLoading {
+			return m.Styles.Spin.Render(m.Spinner.View() + " loading rules…")
+		}
+		total := len(m.RulesData.Skip) + len(m.RulesData.Priority) + len(m.RulesData.Versioning) + len(m.RulesData.Aliases)
+		return m.Styles.Status.Render(itemCount(total, "rule"))
+	case model.TabAdd:
+		return m.Styles.Status.Render("Add a document")
+	}
+
+	if m.IsSearching {
+		return m.Styles.Spin.Render(m.Spinner.View() + " searching…")
+	}
+	if strings.TrimSpace(m.TextInput.Value()) == "" {
+		return m.Styles.Status.Render("Type to search")
+	}
+	if m.Results == nil {
+		return m.Styles.Status.Render("No results")
+	}
+	visibleCount := len(m.Results.History) + len(m.VisibleDocuments())
+	total := max(int(m.Results.Total)+len(m.Results.History), visibleCount)
+	count := itemCount(total, "result")
+	if m.Results.SearchDuration != "" {
+		count += "  " + m.Results.SearchDuration
+	}
+	return m.Styles.Status.Render(count)
+}
+
+func itemCount(count int, singular string) string {
+	if count == 1 {
+		return "1 " + singular
+	}
+	return fmt.Sprintf("%d %ss", count, singular)
 }
 
 func keyContext(m *model.Model) component.KeyContext {
@@ -296,7 +361,16 @@ func keyContext(m *model.Model) component.KeyContext {
 	case model.TabAdd:
 		return component.ContextAdd
 	default:
-		return component.ContextSearch
+		if m.State != model.StateInput {
+			return component.ContextSearchResults
+		}
+		if m.Results != nil && m.Results.QuerySuggestion != "" {
+			return component.ContextSearchSuggestion
+		}
+		if m.GetTotalResults() == 0 {
+			return component.ContextSearchInputEmpty
+		}
+		return component.ContextSearchInput
 	}
 }
 
@@ -328,12 +402,7 @@ func overlayMaxWidth(m *model.Model) int {
 // wraps content in a rounded border with drag handle and close button.
 func renderOverlayBox(content string, borderColor color.Color, maxWidth int) string {
 	lines := strings.Split(content, "\n")
-	maxW := 0
-	for _, l := range lines {
-		if w := lipgloss.Width(l); w > maxW {
-			maxW = w
-		}
-	}
+	maxW := lipgloss.Width(content)
 	if maxWidth > 0 && maxW > maxWidth {
 		maxW = maxWidth
 		for i, l := range lines {
@@ -349,7 +418,7 @@ func renderOverlayBox(content string, borderColor color.Color, maxWidth int) str
 	handle := " ≡ "
 	closeBtn := closeSt.Render("[x]")
 	closeBtnW := lipgloss.Width(closeBtn)
-	handleW := len([]rune(handle))
+	handleW := lipgloss.Width(handle)
 	barW := maxW
 	leftHandleW := (barW - handleW) / 2
 	rightHandleW := max(barW-handleW-leftHandleW-closeBtnW, 0)
@@ -402,14 +471,7 @@ func renderOverlay(bg, fg string, bgW, bgH, offX, offY int) string {
 
 func MenuOverlayOffset(m *model.Model) (int, int) {
 	fg := renderOverlayBox(ContextMenu(m), m.Styles.DialogBorder, overlayMaxWidth(m))
-	fgLines := strings.Split(fg, "\n")
-	fgH := len(fgLines)
-	fgW := 0
-	for _, l := range fgLines {
-		if w := lipgloss.Width(l); w > fgW {
-			fgW = w
-		}
-	}
+	fgW, fgH := lipgloss.Width(fg), lipgloss.Height(fg)
 	bgW, bgH := m.Width-1, m.Height
 	offX := m.MenuX - (bgW-fgW)/2
 	offY := m.MenuY - (bgH-fgH)/2
@@ -422,13 +484,7 @@ func OverlayBounds(m *model.Model) (x, y, w, h int) {
 		return
 	}
 	fg := renderOverlayBox(def.content(m), def.border(m), overlayMaxWidth(m))
-	fgLines := strings.Split(fg, "\n")
-	h = len(fgLines)
-	for _, l := range fgLines {
-		if lw := lipgloss.Width(l); lw > w {
-			w = lw
-		}
-	}
+	w, h = lipgloss.Width(fg), lipgloss.Height(fg)
 	bgW, bgH := m.Width-1, m.Height
 	y = max(0, min(bgH-h, (bgH-h)/2+m.OverlayOffY))
 	x = max(0, min(bgW-w, (bgW-w)/2+m.OverlayOffX))

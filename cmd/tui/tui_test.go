@@ -59,6 +59,8 @@ func TestNoColorViewLeavesTerminalColorsUnset(t *testing.T) {
 func TestTerminalAppearanceLeavesTerminalColorsUnset(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	a := testApp(t)
+	a.m.Ready = true
+	a.m.Width, a.m.Height = 80, 24
 	v := a.View()
 
 	if a.m.ThemeName != theme.TerminalName {
@@ -66,6 +68,9 @@ func TestTerminalAppearanceLeavesTerminalColorsUnset(t *testing.T) {
 	}
 	if v.BackgroundColor != nil || v.ForegroundColor != nil {
 		t.Fatalf("terminal view declared screen colors: background=%v foreground=%v", v.BackgroundColor, v.ForegroundColor)
+	}
+	if v.WindowTitle != "" {
+		t.Fatalf("TUI took ownership of shell-managed window title: %q", v.WindowTitle)
 	}
 }
 

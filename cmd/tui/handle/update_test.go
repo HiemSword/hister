@@ -196,6 +196,170 @@ func TestSettingsKeybindingEditUsesBindingIndex(t *testing.T) {
 	}
 }
 
+func TestArrowNavigationTransfersSearchFocusToResults(t *testing.T) {
+	m := handleTestModel(t)
+	m.Results = &indexer.Results{Documents: []*document.Document{
+		{URL: "https://example.com/first", Title: "First"},
+		{URL: "https://example.com/second", Title: "Second"},
+	}}
+	m.SelectedIdx = -1
+
+	Update(m, tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+
+	if m.State != model.StateResults || m.TextInput.Focused() {
+		t.Fatalf("navigation left focus on search input: state=%s focused=%v", m.State, m.TextInput.Focused())
+	}
+	if m.SelectedIdx != 0 {
+		t.Fatalf("first navigation selected index %d, want 0", m.SelectedIdx)
+	}
+}
+
+func TestSearchResponseDoesNotStealSelectionWhileTyping(t *testing.T) {
+	m := handleTestModel(t)
+	m.TextInput.SetValue("query")
+	m.SelectedIdx = -1
+
+	Update(m, model.ResultsMsg{Results: &indexer.Results{Documents: []*document.Document{{
+		URL: "https://example.com/first", Title: "First",
+	}}}})
+
+	if m.State != model.StateInput || m.SelectedIdx != -1 || !m.TextInput.Focused() {
+		t.Fatalf("search response created false result focus: state=%s selected=%d focused=%v",
+			m.State, m.SelectedIdx, m.TextInput.Focused())
+	}
+}
+
+func TestEmptyResponseReturnsOrphanedResultFocusToSearch(t *testing.T) {
+	m := handleTestModel(t)
+	m.State = model.StateResults
+	m.TextInput.Blur()
+	m.SelectedIdx = 0
+
+	if cmd := Update(m, model.ResultsMsg{Results: &indexer.Results{}}); cmd == nil {
+		t.Fatal("empty response did not resume input and websocket commands")
+	}
+	if m.State != model.StateInput || m.SelectedIdx != -1 || !m.TextInput.Focused() {
+		t.Fatalf("empty response orphaned focus: state=%s selected=%d focused=%v",
+			m.State, m.SelectedIdx, m.TextInput.Focused())
+	}
+}
+
+func TestEmptyResponseUpdatesResultFocusUnderNestedOverlays(t *testing.T) {
+	m := handleTestModel(t)
+	m.Results = &indexer.Results{Documents: []*document.Document{{
+		URL: "https://example.com/first", Title: "First",
+	}}}
+	m.State = model.StateResults
+	m.SelectedIdx = 0
+	m.TextInput.Blur()
+	m.OpenOverlay(model.StateDetails)
+	m.OpenOverlay(model.StateHelp)
+
+	Update(m, model.ResultsMsg{Results: &indexer.Results{}})
+	if m.State != model.StateHelp {
+		t.Fatalf("empty response dismissed visible overlay: state=%s", m.State)
+	}
+
+	_ = CloseOverlay(m)
+	if m.State != model.StateDetails {
+		t.Fatalf("help returned to state=%s, want details", m.State)
+	}
+	_ = CloseOverlay(m)
+	if m.State != model.StateInput || m.SelectedIdx != -1 || !m.TextInput.Focused() {
+		t.Fatalf("details returned to orphaned focus: state=%s selected=%d focused=%v",
+			m.State, m.SelectedIdx, m.TextInput.Focused())
+	}
+}
+
+func TestEnterAcceptsNoResultQuerySuggestion(t *testing.T) {
+	m := handleTestModel(t)
+	m.TextInput.SetValue("wrod")
+	m.Results = &indexer.Results{QuerySuggestion: "word"}
+
+	if cmd := Update(m, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})); cmd == nil {
+		t.Fatal("Enter did not schedule the suggested search")
+	}
+	if got := m.TextInput.Value(); got != "word" {
+		t.Fatalf("suggested query = %q, want word", got)
+	}
+	if m.State != model.StateInput || m.SelectedIdx != -1 {
+		t.Fatalf("suggestion changed focus state=%s selected=%d", m.State, m.SelectedIdx)
+	}
+}
+
+func TestEnterAcceptsSuggestionInsteadOfRetainedResult(t *testing.T) {
+	m := handleTestModel(t)
+	m.TextInput.SetValue("wrod")
+	m.Results = &indexer.Results{
+		Documents:       []*document.Document{{URL: "https://example.com/result", Title: "Result"}},
+		QuerySuggestion: "word",
+	}
+	m.SelectedIdx = 0
+
+	if cmd := Update(m, tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})); cmd == nil {
+		t.Fatal("Enter did not schedule the suggested search")
+	}
+	if got := m.TextInput.Value(); got != "word" {
+		t.Fatalf("suggested query = %q, want word", got)
+	}
+	if m.State != model.StateInput || m.SelectedIdx != -1 {
+		t.Fatalf("suggestion changed focus state=%s selected=%d", m.State, m.SelectedIdx)
+	}
+}
+
+func TestAddValidationReturnsFocusToRequiredURL(t *testing.T) {
+	m := handleTestModel(t)
+	m.ActiveTab = model.TabAdd
+	m.State = model.StateResults
+	m.AddFocusIdx = model.AddSubmitFieldIdx
+
+	if cmd := submitAdd(m); cmd != nil {
+		t.Fatal("invalid add unexpectedly called the server")
+	}
+	if m.AddFocusIdx != 0 || !m.AddInputs[0].Focused() {
+		t.Fatalf("URL validation left focus at %d", m.AddFocusIdx)
+	}
+	if m.AddStatus != "URL is required" || m.AddStatusKind != model.NoticeError {
+		t.Fatalf("URL validation status = %q (%d)", m.AddStatus, m.AddStatusKind)
+	}
+}
+
+func TestResultWheelTransfersFocusAndRoutesPrintableActions(t *testing.T) {
+	m := handleTestModel(t)
+	m.TextInput.SetValue("query")
+	m.Results = &indexer.Results{Documents: []*document.Document{
+		{URL: "https://example.com/first", Title: "First"},
+		{URL: "https://example.com/second", Title: "Second"},
+	}}
+	m.SelectedIdx = -1
+
+	// A wheel event over the input must not silently alter the result selection.
+	Update(m, tea.MouseWheelMsg(tea.Mouse{X: 10, Y: model.RowInput, Button: tea.MouseWheelDown}))
+	if m.State != model.StateInput || m.SelectedIdx != -1 || !m.TextInput.Focused() {
+		t.Fatalf("input wheel changed result focus: state=%s selected=%d focused=%v", m.State, m.SelectedIdx, m.TextInput.Focused())
+	}
+
+	Update(m, tea.MouseWheelMsg(tea.Mouse{X: 10, Y: model.RowVPStart, Button: tea.MouseWheelDown}))
+	if m.State != model.StateResults || m.TextInput.Focused() || m.SelectedIdx != 0 {
+		t.Fatalf("result wheel did not transfer focus: state=%s selected=%d focused=%v", m.State, m.SelectedIdx, m.TextInput.Focused())
+	}
+
+	before := m.TextInput.Value()
+	if cmd := Update(m, tea.KeyPressMsg(tea.Key{Text: "y", Code: 'y'})); cmd == nil {
+		t.Fatal("y did not dispatch the selected-result copy action")
+	}
+	if got := m.TextInput.Value(); got != before {
+		t.Fatalf("y was inserted into search input: got %q, want %q", got, before)
+	}
+
+	if cmd := Update(m, tea.KeyPressMsg(tea.Key{Text: "v", Code: 'v'})); cmd == nil {
+		t.Fatal("v did not dispatch the selected-result preview action")
+	}
+	if m.State != model.StateDetails || m.TextInput.Value() != before {
+		t.Fatalf("v did not open preview without typing: state=%s query=%q", m.State, m.TextInput.Value())
+	}
+}
+
 func TestSuccessfulDeleteClosesPreviewAndClearsTerminalResources(t *testing.T) {
 	m := handleTestModel(t)
 	m.State = model.StateDetails

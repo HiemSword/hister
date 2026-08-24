@@ -31,6 +31,19 @@ func renderModel() *model.Model {
 	return m
 }
 
+func TestLocalHostRecognizesStandardLoopbackForms(t *testing.T) {
+	for _, host := range []string{"localhost", "LOCALHOST:8080", "127.0.0.1:8080", "[::1]:8080", "[::1%lo0]:8080", "::1"} {
+		if !isLocalHost(host) {
+			t.Errorf("isLocalHost(%q) = false", host)
+		}
+	}
+	for _, host := range []string{"example.com", "192.0.2.1", "[2001:db8::1]:8080"} {
+		if isLocalHost(host) {
+			t.Errorf("isLocalHost(%q) = true", host)
+		}
+	}
+}
+
 func prepareSearchRender(m *model.Model) {
 	m.Ready = true
 	m.Viewport = viewport.New(viewport.WithWidth(1), viewport.WithHeight(1))
@@ -251,6 +264,106 @@ func TestSettingsExposeTerminalAppearance(t *testing.T) {
 
 	if !strings.Contains(settings, "Appearance  Terminal (pass-through)") {
 		t.Fatalf("settings do not expose terminal appearance:\n%s", settings)
+	}
+}
+
+func TestComfortableHeaderEstablishesBrandAndWorkspaceHierarchy(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	m := renderModel()
+	header := ansi.Strip(Header(m))
+
+	if !strings.HasPrefix(header, " hister  [Search]") {
+		t.Fatalf("comfortable header lacks brand/workspace hierarchy: %q", header)
+	}
+	if len(m.TabTargets) == 0 || m.TabTargets[0].X0 <= model.TabBarLeftPad {
+		t.Fatalf("branded header did not shift tab hit targets: %#v", m.TabTargets)
+	}
+}
+
+func TestSearchEmptyStatesExplainTheNextStep(t *testing.T) {
+	m := renderModel()
+	m.WsReady = true
+	prepareSearchRender(m)
+	initial := ansi.Strip(m.Viewport.View())
+	if !strings.Contains(initial, "Search your history") || !strings.Contains(initial, "Type above") {
+		t.Fatalf("initial search state is not actionable:\n%s", initial)
+	}
+
+	m.TextInput.SetValue("wrod")
+	m.Results = &indexer.Results{QuerySuggestion: "word"}
+	RefreshViewport(m)
+	empty := ansi.Strip(m.Viewport.View())
+	for _, want := range []string{"No results for “wrod”", "Did you mean “word”?", "Press Enter to try it"} {
+		if !strings.Contains(empty, want) {
+			t.Errorf("no-result state is missing %q:\n%s", want, empty)
+		}
+	}
+}
+
+func TestOfflineSearchStateExplainsRecovery(t *testing.T) {
+	m := renderModel()
+	m.TextInput.SetValue("kept query")
+	prepareSearchRender(m)
+	content := ansi.Strip(m.Viewport.View())
+	if !strings.Contains(content, "Search is offline") || !strings.Contains(content, "reconnecting automatically") {
+		t.Fatalf("offline state is misleading:\n%s", content)
+	}
+}
+
+func TestResultSelectionDistinguishesFocusFromRetention(t *testing.T) {
+	m := renderModel()
+	m.Results = &indexer.Results{Documents: []*document.Document{{
+		URL: "https://example.com", Title: "Selected result",
+	}}}
+	m.SelectedIdx = 0
+	m.State = model.StateInput
+	prepareSearchRender(m)
+	inactive := ansi.Strip(m.Viewport.View())
+	if !strings.Contains(inactive, "│") || strings.Contains(inactive, "┃") {
+		t.Fatalf("retained selection looks focused:\n%s", inactive)
+	}
+
+	m.State = model.StateResults
+	RefreshViewport(m)
+	active := ansi.Strip(m.Viewport.View())
+	if !strings.Contains(active, "┃") {
+		t.Fatalf("focused result lacks a strong focus marker:\n%s", active)
+	}
+}
+
+func TestSelectedResultTitleStyleResumesAfterSearchHighlight(t *testing.T) {
+	m := renderModel()
+	m.State = model.StateResults
+	highlight := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
+	doc := &document.Document{
+		URL:   "https://example.com",
+		Title: "Before " + highlight.Render("match") + " after",
+	}
+
+	rendered := Document(m, doc, true, 60)
+	if want := m.Styles.SelTitle.Render(" after"); !strings.Contains(rendered, want) {
+		t.Fatalf("selected title style was not restored after highlight reset:\n%q\nwant segment %q", rendered, want)
+	}
+	if got := ansi.Strip(rendered); !strings.Contains(got, "Before match after") {
+		t.Fatalf("styled title changed its text: %q", got)
+	}
+}
+
+func TestHeaderStatusMatchesTheActiveWorkspace(t *testing.T) {
+	m := renderModel()
+	m.WsReady = true
+	m.ActiveTab = model.TabHistory
+	m.HistoryItems = []model.HistoryItem{{}, {}}
+	header := ansi.Strip(Header(m))
+	if !strings.Contains(header, "2 history items") || strings.Contains(header, "results") {
+		t.Fatalf("history header reports the wrong workspace status: %q", header)
+	}
+
+	m.Notice = "Could not save rules"
+	m.NoticeKind = model.NoticeError
+	header = ansi.Strip(Header(m))
+	if !strings.Contains(header, "! Could not save rules") {
+		t.Fatalf("error notice relies on color alone: %q", header)
 	}
 }
 

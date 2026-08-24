@@ -6,6 +6,8 @@ package render
 
 import (
 	"fmt"
+	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -90,13 +92,18 @@ func renderURL(st theme.Styles, rawURL, domain string, maxW int) string {
 	}
 
 	const sepStr = " · "
-	pathMaxW := max(0, maxW-hostW-len([]rune(sepStr)))
+	pathMaxW := max(0, maxW-hostW-lipgloss.Width(sepStr))
 	return hostPart + st.URLPath.Render(sepStr) + st.URLPath.Render(truncateLine(path, pathMaxW))
 }
 
 func isLocalHost(host string) bool {
-	h, _, _ := strings.Cut(host, ":")
-	return h == "localhost" || h == "127.0.0.1" || h == "::1"
+	h := host
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		h = parsed
+	}
+	h = strings.Trim(h, "[]")
+	addr, err := netip.ParseAddr(h)
+	return strings.EqualFold(h, "localhost") || err == nil && addr.IsLoopback()
 }
 
 // renders a subtle full-width rule.
@@ -129,6 +136,10 @@ func sanitizeTerminalText(s string) string {
 		}
 		return r
 	}, s)
+}
+
+func sanitizeTerminalLine(s string) string {
+	return strings.Join(strings.Fields(sanitizeTerminalText(s)), " ")
 }
 
 func FormatKey(k string) string {

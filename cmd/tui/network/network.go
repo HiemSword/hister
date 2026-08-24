@@ -65,12 +65,9 @@ func ConnectWebSocket(wsURL, origin, token string, wsChan chan tea.Msg, wsDone c
 						}
 						return
 					}
-					var res *indexer.Results
-					if err := json.Unmarshal(data, &res); err != nil {
+					res, err := decodeResults(data)
+					if err != nil {
 						continue
-					}
-					if len(res.Documents) == 0 && len(res.History) == 0 && len(res.SemanticHits) == 0 {
-						res = &indexer.Results{}
 					}
 					select {
 					case wsChan <- model.ResultsMsg{Results: res}:
@@ -82,6 +79,14 @@ func ConnectWebSocket(wsURL, origin, token string, wsChan chan tea.Msg, wsDone c
 		}()
 		return model.WsConnectedMsg{Conn: conn}
 	}
+}
+
+func decodeResults(data []byte) (*indexer.Results, error) {
+	var results indexer.Results
+	if err := json.Unmarshal(data, &results); err != nil {
+		return nil, err
+	}
+	return &results, nil
 }
 
 func Search(conn *websocket.Conn, wsMu *sync.Mutex, wsReady bool, q model.SearchQuery) tea.Cmd {

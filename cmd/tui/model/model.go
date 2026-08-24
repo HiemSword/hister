@@ -5,10 +5,10 @@
 package model
 
 import (
+	"cmp"
 	"image/color"
-	"math/rand"
+	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -101,10 +101,11 @@ type Model struct {
 	DialogReturnTab int // -1 = return to results/search, >=0 = stay on that tab
 
 	// Connection state
-	ConnError error
-	HintFlash config.Action
-	Notice    string
-	NoticeID  uint64
+	ConnError  error
+	HintFlash  config.Action
+	Notice     string
+	NoticeKind NoticeKind
+	NoticeID   uint64
 
 	// Scrollbar interaction
 	ScrollbarDragging bool
@@ -173,10 +174,11 @@ type Model struct {
 	RulesEditingSection int // section containing the item being edited
 
 	// Add tab
-	AddInputs   [2]textinput.Model // URL and title
-	AddText     textarea.Model
-	AddFocusIdx int
-	AddStatus   string
+	AddInputs     [2]textinput.Model // URL and title
+	AddText       textarea.Model
+	AddFocusIdx   int
+	AddStatus     string
+	AddStatusKind NoticeKind
 
 	// Prioritize dialog
 	PrioritizeURL    string
@@ -184,9 +186,6 @@ type Model struct {
 	PrioritizeBtnIdx int // 0=Cancel, 1=Confirm
 	LabelInput       textinput.Model
 	LabelURL         string
-
-	// Tips rotation
-	TipIdx int
 }
 
 func InitialModel(cfg *config.Config) *Model {
@@ -251,7 +250,6 @@ func InitialModel(cfg *config.Config) *Model {
 		RulesEditingIdx:    -1,
 		PrioritizeInput:    newInput("URL pattern...", 500, 40, st),
 		LabelInput:         newInput("Label (empty clears it)", 200, 50, st),
-		TipIdx:             rand.Intn(len(SearchTips)),
 	}
 	for _, section := range RulesSections {
 		if section.Aliases {
@@ -381,19 +379,19 @@ func (m *Model) VisibleDocuments() []*document.Document {
 		return documents
 	}
 
-	seen := make(map[string]bool, len(documents))
+	seen := make(map[string]struct{}, len(documents))
 	byID := make(map[string]*document.Document, len(documents))
 	for _, doc := range documents {
-		seen[doc.URL] = true
+		seen[doc.URL] = struct{}{}
 		byID[document.GetDocID(doc.UserID, doc.URL)] = doc
 	}
 	semanticScores := make(map[string]float64, len(m.Results.SemanticHits))
 	for _, hit := range m.Results.SemanticHits {
 		if hit.Document != nil {
 			semanticScores[hit.Document.URL] = hit.Similarity
-			if !seen[hit.Document.URL] {
+			if _, ok := seen[hit.Document.URL]; !ok {
 				documents = append(documents, hit.Document)
-				seen[hit.Document.URL] = true
+				seen[hit.Document.URL] = struct{}{}
 				byID[document.GetDocID(hit.Document.UserID, hit.Document.URL)] = hit.Document
 			}
 		}
@@ -402,11 +400,11 @@ func (m *Model) VisibleDocuments() []*document.Document {
 		}
 	}
 	if m.SortMode == "domain" {
-		sort.SliceStable(documents, func(i, j int) bool {
-			if documents[i].Domain == documents[j].Domain {
-				return documents[i].Score > documents[j].Score
+		slices.SortStableFunc(documents, func(a, b *document.Document) int {
+			if n := cmp.Compare(a.Domain, b.Domain); n != 0 {
+				return n
 			}
-			return documents[i].Domain < documents[j].Domain
+			return cmp.Compare(b.Score, a.Score)
 		})
 		return documents
 	}
@@ -422,8 +420,8 @@ func (m *Model) VisibleDocuments() []*document.Document {
 	combinedScore := func(doc *document.Document) float64 {
 		return (1-weight)*(doc.Score/maxKeywordScore) + weight*semanticScores[doc.URL]
 	}
-	sort.SliceStable(documents, func(i, j int) bool {
-		return combinedScore(documents[i]) > combinedScore(documents[j])
+	slices.SortStableFunc(documents, func(a, b *document.Document) int {
+		return cmp.Compare(combinedScore(b), combinedScore(a))
 	})
 	return documents
 }
@@ -440,12 +438,7 @@ func (m *Model) SortedSettingsItems() []SettingsItem {
 }
 
 func (m *Model) SortedAliasKeys() []string {
-	keys := make([]string, 0, len(m.RulesData.Aliases))
-	for k := range m.RulesData.Aliases {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
+	return slices.Sorted(maps.Keys(m.RulesData.Aliases))
 }
 
 func (m *Model) RulesSectionLen(section int) int {
@@ -477,26 +470,11 @@ func (m *Model) OpenThemePicker() {
 	m.OrigLightTheme = m.Cfg.TUI.LightTheme
 	m.OrigColorScheme = m.Cfg.TUI.ColorScheme
 	darkNames, lightNames := theme.ClassifyThemes()
-	m.DarkThemeIdx = 0
-	for i, name := range darkNames {
-		if name == m.Cfg.TUI.DarkTheme {
-			m.DarkThemeIdx = i
-			break
-		}
-	}
-	m.LightThemeIdx = 0
-	for i, name := range lightNames {
-		if name == m.Cfg.TUI.LightTheme {
-			m.LightThemeIdx = i
-			break
-		}
-	}
+	m.DarkThemeIdx = max(0, slices.Index(darkNames, m.Cfg.TUI.DarkTheme))
+	m.LightThemeIdx = max(0, slices.Index(lightNames, m.Cfg.TUI.LightTheme))
 	m.ThemePickerSection = 0
-	for i, name := range theme.ThemeNames() {
-		if name == m.ThemeName {
-			m.ThemePickerIdx = i
-			break
-		}
+	if idx := slices.Index(theme.ThemeNames(), m.ThemeName); idx >= 0 {
+		m.ThemePickerIdx = idx
 	}
 	m.OpenOverlay(StateThemePicker)
 }
@@ -523,6 +501,28 @@ func (m *Model) SetBaseState(state ViewState) {
 	m.overlayStack = nil
 	m.State = state
 	m.PrevState = state
+}
+
+// ReplaceBaseState updates the root interaction state without dismissing any
+// overlays above it. It reports whether the currently visible state changed.
+func (m *Model) ReplaceBaseState(from, to ViewState) bool {
+	if len(m.overlayStack) == 0 {
+		if m.State != from {
+			return false
+		}
+		m.State = to
+		m.PrevState = to
+		return true
+	}
+
+	if m.overlayStack[0] != from {
+		return false
+	}
+	m.overlayStack[0] = to
+	if m.PrevState == from {
+		m.PrevState = to
+	}
+	return false
 }
 
 // DismissDialog returns to the correct state after closing a dialog.
@@ -597,6 +597,18 @@ func (m *Model) BlurAllRulesInputs() {
 	m.RulesAliasValInput.Blur()
 }
 
+// FocusSearchResults keeps keyboard routing aligned with result interaction.
+// Callers still own selection movement so the first wheel/arrow event can
+// choose the first result without accidentally skipping it.
+func (m *Model) FocusSearchResults() bool {
+	if m.ActiveTab != TabSearch || m.State != StateInput || m.GetTotalResults() == 0 {
+		return false
+	}
+	m.State = StateResults
+	m.TextInput.Blur()
+	return true
+}
+
 func ScrollIdx(idx *int, delta, minVal, maxVal int) bool {
 	n := max(minVal, min(maxVal, *idx+delta))
 	if n == *idx {
@@ -617,12 +629,11 @@ func (m *Model) OpenOverlay(state ViewState) {
 // returns the result index at the given content Y offset,
 // or -1 if no result is found.
 func (m *Model) FindResultAtY(contentY int) int {
-	for i, offset := range slices.Backward(m.LineOffsets) {
-		if offset <= contentY {
-			return i
-		}
+	i, exact := slices.BinarySearch(m.LineOffsets, contentY)
+	if exact {
+		return i
 	}
-	return -1
+	return i - 1
 }
 
 func (m *Model) PostHistoryCmd(u string) tea.Cmd {

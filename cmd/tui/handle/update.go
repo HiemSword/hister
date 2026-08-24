@@ -145,7 +145,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 	case model.HistoryFetchedMsg:
 		m.HistoryLoading = false
 		if msg.Err != nil {
-			return m.Notify("Could not load history: " + msg.Err.Error())
+			return m.NotifyError("Could not load history: " + msg.Err.Error())
 		}
 		m.HistoryItems = msg.Items
 		m.HistoryIdx = 0
@@ -153,42 +153,48 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 	case model.RulesFetchedMsg:
 		m.RulesLoading = false
 		if msg.Err != nil {
-			return m.Notify("Could not load rules: " + msg.Err.Error())
+			return m.NotifyError("Could not load rules: " + msg.Err.Error())
 		}
 		m.RulesData = msg.Data
 		m.RulesIdx = 0
 
 	case model.DeleteResultMsg:
 		if msg.Err != nil {
-			return m.Notify("Could not delete result: " + msg.Err.Error())
+			return m.NotifyError("Could not delete result: " + msg.Err.Error())
 		}
 		m.ResetDetails()
 		m.SetBaseState(model.StateResults)
 		render.ResizeSearchViewports(m)
 		render.RefreshAndScroll(m)
-		return tea.Batch(doSearch(m), m.Notify("Result deleted"))
+		return tea.Batch(doSearch(m), m.NotifySuccess("Result deleted"))
 
 	case model.AddResultMsg:
 		if msg.Err != nil {
-			m.AddStatus = "Error: " + msg.Err.Error()
+			m.AddStatus = "Could not add document: " + msg.Err.Error()
+			m.AddStatusKind = model.NoticeError
 		} else {
-			m.AddStatus = "Added successfully!"
+			m.AddStatus = "Document added"
+			m.AddStatusKind = model.NoticeSuccess
 			for i := range m.AddInputs {
 				m.AddInputs[i].SetValue("")
+				m.AddInputs[i].Blur()
 			}
 			m.AddText.SetValue("")
+			m.AddText.Blur()
+			m.AddFocusIdx = 0
+			return m.AddInputs[0].Focus()
 		}
 
 	case model.RulesSavedMsg:
 		if msg.Err == nil {
 			m.RulesLoading = true
-			return tea.Batch(m.FetchRulesCmd(), m.Notify("Rules saved"))
+			return tea.Batch(m.FetchRulesCmd(), m.NotifySuccess("Rules saved"))
 		}
-		return m.Notify("Could not save rules: " + msg.Err.Error())
+		return m.NotifyError("Could not save rules: " + msg.Err.Error())
 
 	case model.LabelSavedMsg:
 		if msg.Err != nil {
-			return m.Notify("Could not update label: " + msg.Err.Error())
+			return m.NotifyError("Could not update label: " + msg.Err.Error())
 		}
 		if m.Results != nil {
 			for _, doc := range m.Results.Documents {
@@ -207,9 +213,9 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			m.Details.SetContent(render.ResultDetailsContent(m))
 		}
 		if msg.Label == "" {
-			return m.Notify("Label cleared")
+			return m.NotifySuccess("Label cleared")
 		}
-		return m.Notify("Label saved")
+		return m.NotifySuccess("Label saved")
 
 	case model.ResultsMsg:
 		m.IsSearching = false
@@ -217,11 +223,19 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		if m.SelectedIdx >= m.GetTotalResults() {
 			m.SelectedIdx = m.GetTotalResults() - 1
 		}
-		if m.SelectedIdx < 0 && m.GetTotalResults() > 0 {
+		focusInput := false
+		if m.GetTotalResults() == 0 {
+			focusInput = m.ReplaceBaseState(model.StateResults, model.StateInput)
+		}
+		if m.SelectedIdx < 0 && m.GetTotalResults() > 0 && m.State != model.StateInput {
 			m.SelectedIdx = 0
 		}
 		render.RefreshAndScroll(m)
-		return network.ListenToWebSocket(m.WsChan, m.WsDone)
+		listen := network.ListenToWebSocket(m.WsChan, m.WsDone)
+		if focusInput {
+			return tea.Batch(m.TextInput.Focus(), listen)
+		}
+		return listen
 
 	case model.ServerConfigFetchedMsg:
 		if msg.Err != nil {
@@ -273,7 +287,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 		return network.ConnectWebSocket(m.Cfg.WebSocketURL(), m.Cfg.BaseURL(""), m.Cfg.App.AccessToken, m.WsChan, m.WsDone)
 
 	case model.ErrMsg:
-		return tea.Batch(m.Notify(msg.Err.Error()), network.ListenToWebSocket(m.WsChan, m.WsDone))
+		return tea.Batch(m.NotifyError(msg.Err.Error()), network.ListenToWebSocket(m.WsChan, m.WsDone))
 	}
 	return nil
 }
