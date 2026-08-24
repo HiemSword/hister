@@ -4,6 +4,8 @@ import (
 	"os"
 	"regexp"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func restoreEnv(key, value string, existed bool) {
@@ -37,6 +39,26 @@ func TestServerDefaults(t *testing.T) {
 	}
 	if cfg.Server.MaxBatchBodyBytes() != 40<<20 {
 		t.Fatalf("default server batch body bytes=%d, want %d", cfg.Server.MaxBatchBodyBytes(), 40<<20)
+	}
+}
+
+func TestDefaultConfigYAMLOmitsTUIHotkeys(t *testing.T) {
+	b, err := yaml.Marshal(CreateDefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var generated struct {
+		Hotkeys map[string]any `yaml:"hotkeys"`
+	}
+	if err := yaml.Unmarshal(b, &generated); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := generated.Hotkeys["web"]; !ok {
+		t.Fatal("generated config does not contain web hotkeys")
+	}
+	if _, ok := generated.Hotkeys["tui"]; ok {
+		t.Fatal("generated config contains TUI hotkeys")
 	}
 }
 

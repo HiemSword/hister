@@ -145,7 +145,7 @@ type CrawlerConfig struct {
 
 type Hotkeys struct {
 	Web map[string]string `yaml:"web" mapstructure:"web"`
-	TUI map[string]string `yaml:"tui" mapstructure:"tui"`
+	TUI map[string]string `yaml:"-" mapstructure:"tui"`
 }
 
 type Rules struct {
