@@ -271,7 +271,18 @@ func TestMatch(t *testing.T) {
 		{"https://example.com/page", false},
 		{"https://stackoverflow.com/questions/123", false},
 		{"https://example.com/path/youtube.com/fake", false},
+		{"https://nebula.tv/videos/bigjoel-the-highs-and-lows-of-rupi-kaur", true},
 	}
+
+	if err := e.SetConfig(&config.Extractor{
+		Enable: true,
+		Options: map[string]any{
+			"extra_domains": []string{"nebula.tv"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, tt := range tests {
 		d := &document.Document{URL: tt.url}
 		if got := e.Match(d); got != tt.want {
