@@ -58,6 +58,7 @@ func (e *YtdlpExtractor) GetConfig() *sdk.Config {
 				"max_concurrent_jobs": defaultMaxConcurrentJobs,
 				"fetch_subtitles":     false,
 				"sub_language":        "auto",
+				"extra_domains":       [...]string{},
 			},
 		}
 	}
@@ -68,7 +69,7 @@ func (e *YtdlpExtractor) SetConfig(c *sdk.Config) error {
 	for k := range c.Options {
 		switch k {
 		case "binary", "timeout", "max_concurrent_jobs", "fetch_subtitles", "sub_language",
-			"cookies_file", "cookies_from_browser", "extra_args":
+			"cookies_file", "cookies_from_browser", "extra_args", "extra_domains":
 		default:
 			return fmt.Errorf("unknown option %q", k)
 		}
@@ -181,8 +182,14 @@ func (e *YtdlpExtractor) Match(d *sdk.Document) bool {
 			break
 		}
 	}
+
+	var extra_domains []string
+	if l, ok := e.GetConfig().Options["extra_domains"].([]string); ok && len(l) > 0 {
+		extra_domains = l
+	}
+
 	if !matched {
-		for _, sub := range knownHostSubstrings {
+		for _, sub := range append(knownHostSubstrings, extra_domains...) {
 			if strings.Contains(host, sub) {
 				matched = true
 				break
