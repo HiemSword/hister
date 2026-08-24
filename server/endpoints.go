@@ -43,6 +43,8 @@ type historyItem struct {
 	Pin    *bool  `json:"pin"`
 }
 
+const healthCheckPath = "/health"
+
 var ws = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -79,13 +81,24 @@ func registerEndpoints(cfg *config.Config, idx *indexer.Indexer) http.Handler {
 	mux.HandleFunc("GET /favicon.ico", createHandler(cfg, idx, serveFavicon))
 	mux.HandleFunc("GET /opensearch.xml", createHandler(cfg, idx, serveOpensearch))
 	mux.HandleFunc("/", createHandler(cfg, idx, serveSPA))
-	// If base_url contains a non-root path prefix (e.g. https://x.com/subfolder),
-	// accept requests both with and without that prefix.
+	// If base_url contains a path prefix, require it for application routes.
+	appHandler := http.Handler(mux)
 	basePrefix := cfg.BasePathPrefix()
 	if basePrefix != "" {
-		return withOptionalBasePathPrefix(basePrefix, mux)
+		appHandler = withOptionalBasePathPrefix(basePrefix, appHandler)
 	}
-	return mux
+	serverMux := http.NewServeMux()
+	serverMux.HandleFunc(healthCheckPath, serveHealth)
+	serverMux.Handle("/", appHandler)
+	return serverMux
+}
+
+func serveHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func registerDebugEndpoints(mux *http.ServeMux, cfg *config.Config, idx *indexer.Indexer) {

@@ -98,7 +98,7 @@ ENV HISTER_DATA_DIR=/hister/data \
 EXPOSE 4433
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["wget", "-qO", "/dev/null", "http://localhost:4433/"]
+    CMD ["sh", "-c", "port=\"${HISTER_PORT:-${HISTER__SERVER__ADDRESS##*:}}\"; exec wget -qO /dev/null \"http://localhost:${port:-4433}/health\""]
 
 ENTRYPOINT ["/hister/hister"]
 CMD ["listen"]
