@@ -133,7 +133,17 @@ var importCmd = &cobra.Command{
 	Short: "Import documents from files, browsers, or services",
 	Long: `Import documents from files, browser history, or external services.
 
-Use one of the available subcommands to select the import source.`,
+Use one of the available subcommands to select the import source.
+
+Execution scopes describe access to Hister state. Remote commands use the
+configured Hister HTTP server without opening the local Hister database or
+search index. Hybrid commands access local files or Hister state and also use
+the configured Hister HTTP server.
+
+The file importer reads and prepares local files before submitting documents
+to the server. The browser importer reads local browser history, keeps its
+resumable crawl state locally, fetches page contents, and submits the prepared
+documents to the server.`,
 }
 
 var importFileCmd = &cobra.Command{
