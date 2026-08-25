@@ -57,6 +57,12 @@ description: 'Understand and configure the built in content handlers used for in
       defaultValue: '(none)',
       description: 'Additional yt-dlp command line flags appended verbatim to every invocation.',
     },
+    {
+      name: 'extra_domains',
+      type: 'string[]',
+      defaultValue: '(none)',
+      description: 'Additional domains to match this extractor. They should take the form "domain.tld", e.g. "vimeo.com". Check the yt-dlp repository for a full list of supported sites.'
+    }
   ];
 </script>
 
@@ -336,7 +342,7 @@ installed separately.
 
 **Matches:** a curated list of video-hosting domains (YouTube, Vimeo, Twitch,
 Dailymotion, Bilibili, and others), as well as any hostname containing common
-video-platform substrings.
+video-platform substrings. Additional domains can be matched using the `extra_domains` option.
 
 #### Options
 
@@ -358,6 +364,8 @@ extractors:
       extra_args:
         - --proxy
         - socks5://127.0.0.1:1080
+      extra_domains:
+        - vimeo.com
 ```
 
 ### `readability`
