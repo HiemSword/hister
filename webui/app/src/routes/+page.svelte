@@ -23,6 +23,7 @@
     buildSearchQuery,
     parseSearchResults,
     openURL,
+    isIMEKeyboardEvent,
   } from '$lib/search';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
   import { ResultState } from '$lib/result-state.svelte';
@@ -166,6 +167,10 @@
   let inputEl: HTMLInputElement | null = $state(null);
 
   let query = $state('');
+  let isComposing = $state(false);
+  let compositionEndPending = $state(false);
+  let compositionEndFrame: number | undefined;
+  let compositionStartedOnHome = $state(false);
   let autocomplete = $state('');
   let queryCursor = $state(0);
   let querySuggestionOpen = $state(false);
@@ -418,7 +423,9 @@
     delete_result: deleteSelectedResult,
   };
 
-  const isSearching = $derived(query.length > 0 || resultsShown);
+  const isSearching = $derived(
+    (query.length > 0 && (!isComposing || !compositionStartedOnHome)) || resultsShown,
+  );
 
   let tipWasSearching = false;
   $effect(() => {
@@ -822,7 +829,7 @@
       lastResults = res;
       autocomplete = (query && res.query_suggestion) || '';
       highlightIdx = 0;
-      resultsShown = true;
+      if (!isComposing) resultsShown = true;
     }
     hasMore = !!res.page_key;
     pageKey = res.page_key ?? '';
@@ -1127,9 +1134,37 @@
     const target = event.currentTarget as HTMLInputElement;
     query = target.value;
     queryCursor = target.selectionStart ?? target.value.length;
+    if (compositionEndPending && !(event as InputEvent).isComposing) {
+      if (compositionEndFrame !== undefined) cancelAnimationFrame(compositionEndFrame);
+      isComposing = false;
+      compositionEndPending = false;
+      compositionEndFrame = undefined;
+    }
     querySuggestionIndex = 0;
     querySuggestionKeyboardActive = false;
     querySuggestionOpen = true;
+  }
+
+  function handleCompositionStart() {
+    if (compositionEndFrame !== undefined) cancelAnimationFrame(compositionEndFrame);
+    compositionEndFrame = undefined;
+
+    compositionStartedOnHome = !isSearching;
+    isComposing = true;
+    compositionEndPending = false;
+  }
+
+  function handleCompositionEnd(event: CompositionEvent) {
+    compositionEndPending = true;
+    const input = event.currentTarget as HTMLInputElement;
+    compositionEndFrame = requestAnimationFrame(() => {
+      compositionEndFrame = undefined;
+      if (!compositionEndPending) return;
+      query = input.value;
+      queryCursor = input.selectionStart ?? input.value.length;
+      isComposing = false;
+      compositionEndPending = false;
+    });
   }
 
   function handleQuerySelection(event: Event) {
@@ -1164,6 +1199,7 @@
   }
 
   function handleQueryInputKeydown(event: KeyboardEvent) {
+    if (isIMEKeyboardEvent(event)) return;
     if (!querySuggestionsVisible || querySuggestions.length === 0) return;
 
     if (event.key === 'Tab' && event.shiftKey) {
@@ -1247,6 +1283,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (isIMEKeyboardEvent(e)) return;
     if (showDeleteConfirm) {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -1812,6 +1849,8 @@
           aria-haspopup="listbox"
           aria-activedescendant={activeQuerySuggestionId}
           oninput={handleQueryInput}
+          oncompositionstart={handleCompositionStart}
+          oncompositionend={handleCompositionEnd}
           onfocus={handleQueryFocus}
           onselect={handleQuerySelection}
           onclick={handleQuerySelection}
@@ -2625,6 +2664,8 @@
           aria-activedescendant={activeQuerySuggestionId}
           placeholder="Search..."
           oninput={handleQueryInput}
+          oncompositionstart={handleCompositionStart}
+          oncompositionend={handleCompositionEnd}
           onfocus={handleQueryFocus}
           onselect={handleQuerySelection}
           onclick={handleQuerySelection}
