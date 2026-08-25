@@ -91,7 +91,6 @@ var knownDomains = []string{
 	"bandcamp.com",
 	"mixcloud.com",
 	"ted.com",
-	"archive.org",
 	"media.ccc.de",
 	"tiktok.com",
 }
