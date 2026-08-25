@@ -277,7 +277,7 @@ func TestMatch(t *testing.T) {
 	if err := e.SetConfig(&config.Extractor{
 		Enable: true,
 		Options: map[string]any{
-			"extra_domains": []string{"nebula.tv"},
+			"extra_domains": []any{"nebula.tv"},
 		},
 	}); err != nil {
 		t.Fatal(err)

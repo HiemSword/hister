@@ -58,7 +58,7 @@ func (e *YtdlpExtractor) GetConfig() *sdk.Config {
 				"max_concurrent_jobs": defaultMaxConcurrentJobs,
 				"fetch_subtitles":     false,
 				"sub_language":        "auto",
-				"extra_domains":       [...]string{},
+				"extra_domains":       [0]string{},
 			},
 		}
 	}
@@ -174,22 +174,27 @@ func (e *YtdlpExtractor) Match(d *sdk.Document) bool {
 	if err != nil {
 		return false
 	}
+
+	var extraDomains []string
+	if l, ok := e.GetConfig().Options["extra_domains"].([]any); ok && len(l) > 0 {
+		for _, v := range l {
+			if s, ok := v.(string); ok {
+				extraDomains = append(extraDomains, s)
+			}
+		}
+	}
+
 	host := strings.ToLower(u.Hostname())
 	matched := false
-	for _, domain := range knownDomains {
+	for _, domain := range append(knownDomains, extraDomains...) {
 		if host == domain || strings.HasSuffix(host, "."+domain) {
 			matched = true
 			break
 		}
 	}
 
-	var extra_domains []string
-	if l, ok := e.GetConfig().Options["extra_domains"].([]string); ok && len(l) > 0 {
-		extra_domains = l
-	}
-
 	if !matched {
-		for _, sub := range append(knownHostSubstrings, extra_domains...) {
+		for _, sub := range knownHostSubstrings {
 			if strings.Contains(host, sub) {
 				matched = true
 				break
