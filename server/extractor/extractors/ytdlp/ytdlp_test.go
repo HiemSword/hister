@@ -271,7 +271,7 @@ func TestMatch(t *testing.T) {
 		{"https://example.com/page", false},
 		{"https://stackoverflow.com/questions/123", false},
 		{"https://example.com/path/youtube.com/fake", false},
-		{"https://nebula.tv/videos/bigjoel-the-highs-and-lows-of-rupi-kaur", true},
+		{"https://nebula.tv/videos/some-video", true},
 	}
 
 	if err := e.SetConfig(&config.Extractor{
