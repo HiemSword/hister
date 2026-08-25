@@ -385,6 +385,7 @@ export class KeyHandler {
   }
 
   handle(e: KeyboardEvent, isInputFocus: boolean): boolean {
+    if (isIMEKeyboardEvent(e)) return false;
     if (!e.key) return false;
 
     const modifier = e.altKey ? 'alt' : e.ctrlKey ? 'ctrl' : e.metaKey ? 'meta' : undefined;
@@ -418,6 +419,12 @@ export class KeyHandler {
     }
     return true;
   }
+}
+
+// MDN recommends checking keyCode 229 in addition to isComposing for IME keydown events.
+// See: https://developer.mozilla.org/en-US/docs/Web/API/Element/keydown_event#keydown_events_with_ime
+export function isIMEKeyboardEvent(e: KeyboardEvent): boolean {
+  return e.isComposing || e.keyCode === 229;
 }
 
 export const RESULTS_PER_PAGE = 20;
