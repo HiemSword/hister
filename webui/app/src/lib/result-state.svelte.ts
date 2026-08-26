@@ -1,7 +1,48 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { apiFetch, getUserId } from './api';
+import { deleteDocuments, previewDocumentDeletion } from './document-delete';
+import { fetchRules, saveRuleLists } from './rules';
 import { buildUrlSkipPattern, buildDomainSkipPattern } from '@hister/components';
+
+interface AddSkipRuleOptions {
+  url: string;
+  domain: string;
+  type: 'url' | 'domain';
+  deleteMatches: boolean;
+  removeResult: (url: string) => void;
+  removeResultsByDomain: (domain: string) => void;
+  confirmDeletion: (matched: number) => Promise<boolean>;
+}
+
+async function saveSkipRule(pattern: string): Promise<void> {
+  const rules = await fetchRules();
+  if (rules.skip.includes(pattern)) return;
+  await saveRuleLists({ ...rules, skip: [...rules.skip, pattern] });
+}
+
+function skipRuleDeleteQuery(url: string, domain: string, type: 'url' | 'domain'): string {
+  const uid = getUserId();
+  const userFilter = uid === undefined ? '' : ` user_id:${uid}`;
+  return type === 'url'
+    ? `url:"${url.replaceAll('"', '\\"')}"${userFilter}`
+    : `domain:${domain}${userFilter}`;
+}
+
+async function deleteSkipRuleDocuments(
+  query: string,
+  confirmDeletion: (matched: number) => Promise<boolean>,
+  onDeleted: () => void,
+): Promise<string> {
+  const matched = await previewDocumentDeletion(query);
+  if (matched === 0) return 'Skip rule added. No matching documents found.';
+  if (!(await confirmDeletion(matched))) {
+    return 'Skip rule added. Matching documents were not deleted.';
+  }
+  const deleted = await deleteDocuments(query);
+  onDeleted();
+  return `Skip rule added. ${deleted} matching document${deleted === 1 ? '' : 's'} deleted.`;
+}
 
 export class ResultState {
   labelInput = $state('');
@@ -79,53 +120,40 @@ export class ResultState {
     }
   }
 
-  async addSkipRule(
-    url: string,
-    domain: string,
-    type: 'url' | 'domain',
-    deleteMatches: boolean,
-    removeResult: (url: string) => void,
-    removeResultsByDomain: (domain: string) => void,
-  ) {
+  async addSkipRule(options: AddSkipRuleOptions) {
+    const {
+      url,
+      domain,
+      type,
+      deleteMatches,
+      removeResult,
+      removeResultsByDomain,
+      confirmDeletion,
+    } = options;
     this.actionsMessage = null;
     this.actionsError = false;
+    const pattern = type === 'url' ? buildUrlSkipPattern(url) : buildDomainSkipPattern(url);
     try {
-      const pattern = type === 'url' ? buildUrlSkipPattern(url) : buildDomainSkipPattern(url);
-      const rulesResp = await apiFetch('/rules');
-      const rules = await rulesResp.json();
-      const skipList: string[] = rules.skip || [];
-      if (!skipList.includes(pattern)) {
-        skipList.push(pattern);
-      }
-      const formData = new URLSearchParams();
-      formData.set('skip', skipList.join('\n'));
-      formData.set('priority', (rules.priority || []).join('\n'));
-      await apiFetch('/rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-      });
-      if (deleteMatches) {
-        const uid = getUserId();
-        const userFilter = uid !== undefined ? ` user_id:${uid}` : '';
-        const deleteQuery =
-          type === 'url'
-            ? `url:"${url.replaceAll('"', '\\"')}"${userFilter}`
-            : `domain:${domain}${userFilter}`;
-        await apiFetch('/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: deleteQuery }),
-        });
-        if (type === 'url') {
-          removeResult(url);
-        } else {
-          removeResultsByDomain(domain);
-        }
-      }
-      this.actionsMessage = `Skip rule added${deleteMatches ? ' and documents deleted' : ''}.`;
+      await saveSkipRule(pattern);
     } catch {
       this.actionsMessage = 'Failed to add skip rule.';
+      this.actionsError = true;
+      return;
+    }
+    if (!deleteMatches) {
+      this.actionsMessage = 'Skip rule added.';
+      return;
+    }
+    try {
+      const removeMatches =
+        type === 'url' ? () => removeResult(url) : () => removeResultsByDomain(domain);
+      this.actionsMessage = await deleteSkipRuleDocuments(
+        skipRuleDeleteQuery(url, domain, type),
+        confirmDeletion,
+        removeMatches,
+      );
+    } catch {
+      this.actionsMessage = 'Skip rule added, but matching documents could not be deleted.';
       this.actionsError = true;
     }
   }

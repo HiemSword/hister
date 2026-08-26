@@ -8,12 +8,14 @@
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
   import { base } from '$app/paths';
   import BulkRulesDialog from '$lib/components/BulkRulesDialog.svelte';
+  import DeleteMatchingDocumentsDialog from '$lib/components/DeleteMatchingDocumentsDialog.svelte';
   import DeleteMatchingDocumentsOption from '$lib/components/DeleteMatchingDocumentsOption.svelte';
+  import { deleteDocuments, previewDocumentDeletion } from '$lib/document-delete';
+  import { fetchRules, saveRuleLists, type RulesData, type RuleType } from '$lib/rules';
   import { Button } from '@hister/components/ui/button';
   import { Input } from '@hister/components/ui/input';
   import { Badge } from '@hister/components/ui/badge';
   import * as Card from '@hister/components/ui/card';
-  import * as Dialog from '@hister/components/ui/dialog';
   import * as Table from '@hister/components/ui/table';
   import {
     Shield,
@@ -35,16 +37,9 @@
   import AlertCircle from '@lucide/svelte/icons/circle-alert';
   import CheckCircle from '@lucide/svelte/icons/circle-check';
 
-  interface RulesData {
-    skip: string[];
-    priority: string[];
-    versioning: string[];
-    aliases: Record<string, string>;
-  }
-
   interface RuleRow {
     pattern: string;
-    type: 'skip' | 'priority' | 'versioning';
+    type: RuleType;
     addedOrder: number;
   }
 
@@ -92,7 +87,7 @@
   let newAliasKeyword = $state('');
   let newAliasValue = $state('');
   let newRulePattern = $state('');
-  let newRuleType: 'skip' | 'priority' | 'versioning' = $state('skip');
+  let newRuleType: RuleType = $state('skip');
   let deleteMatchingDocuments = $state(false);
   let bulkAddOpen = $state(false);
   let bulkRulePatterns = $state('');
@@ -109,7 +104,7 @@
   // Editing state for rules
   let editingRuleIndex = $state<number | null>(null);
   let editRulePattern = $state('');
-  let editRuleType: 'skip' | 'priority' | 'versioning' = $state('skip');
+  let editRuleType: RuleType = $state('skip');
   let editDeleteMatchingDocuments = $state(false);
 
   // Filter state
@@ -206,15 +201,7 @@
   async function loadRules() {
     loading = true;
     try {
-      const res = await apiFetch('/rules', { headers: { Accept: 'application/json' } });
-      if (!res.ok) throw new Error('Failed to load rules');
-      const data = await res.json();
-      rules = {
-        skip: data.skip ?? [],
-        priority: data.priority ?? [],
-        versioning: data.versioning ?? [],
-        aliases: data.aliases ?? {},
-      };
+      rules = await fetchRules();
     } catch (e) {
       message = String(e);
       isError = true;
@@ -228,19 +215,7 @@
     saving = true;
     message = '';
     try {
-      const formData = new URLSearchParams();
-      formData.set('skip', nextRules.skip.join('\n'));
-      formData.set('priority', nextRules.priority.join('\n'));
-      formData.set('versioning', nextRules.versioning.join('\n'));
-      const res = await apiFetch('/rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(body.trim() || 'Failed to save rules');
-      }
+      await saveRuleLists(nextRules);
       message = 'Rules saved successfully';
       isError = false;
       await loadRules();
@@ -254,15 +229,8 @@
     }
   }
 
-  function removeRule(pattern: string, type: 'skip' | 'priority' | 'versioning') {
-    if (type === 'skip') {
-      rules.skip = rules.skip.filter((p) => p !== pattern);
-    } else if (type === 'priority') {
-      rules.priority = rules.priority.filter((p) => p !== pattern);
-    } else {
-      rules.versioning = rules.versioning.filter((p) => p !== pattern);
-    }
-    saveRules();
+  function removeRule(pattern: string, type: RuleType) {
+    void saveRules({ ...rules, [type]: rules[type].filter((p) => p !== pattern) });
   }
 
   function rulesWithPatterns(patterns: string[]): RulesData {
@@ -343,34 +311,6 @@
     return `url_re:"${quoteRegexpValue(pattern)}"${userFilter}`;
   }
 
-  async function deleteRegexpMatches(patterns: string[]): Promise<number> {
-    const res = await apiFetch('/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: deleteQuery(patterns) }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(body.trim() || 'Failed to delete matching documents');
-    }
-    const data = await res.json();
-    return Number(data.deleted ?? 0);
-  }
-
-  async function countRegexpMatches(patterns: string[]): Promise<number> {
-    const res = await apiFetch('/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: deleteQuery(patterns), dry_run: true }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(body.trim() || 'Failed to count matching documents');
-    }
-    const data = await res.json();
-    return Number(data.matched ?? 0);
-  }
-
   async function deleteMatchesAfterSaving(
     patterns: string[],
     enabled: boolean,
@@ -381,7 +321,7 @@
       return;
     }
     try {
-      const matched = await countRegexpMatches(patterns);
+      const matched = await previewDocumentDeletion(deleteQuery(patterns));
       if (matched === 0) {
         message = `${savedMessage} No matching documents found.`;
         isError = false;
@@ -401,7 +341,7 @@
     if (!pending) return;
     deletingMatchingDocuments = true;
     try {
-      const deleted = await deleteRegexpMatches(pending.patterns);
+      const deleted = await deleteDocuments(deleteQuery(pending.patterns));
       message = `${pending.savedMessage} ${deleted} matching document${deleted === 1 ? '' : 's'} deleted.`;
       isError = false;
     } catch (e) {
@@ -523,6 +463,22 @@
     editDeleteMatchingDocuments = false;
   }
 
+  function rulesWithEditedRule(row: RuleRow, pattern: string, type: RuleType): RulesData {
+    const nextRules = {
+      ...rules,
+      skip: [...rules.skip],
+      priority: [...rules.priority],
+      versioning: [...rules.versioning],
+    };
+    if (row.type === type) {
+      nextRules[type] = nextRules[type].map((value) => (value === row.pattern ? pattern : value));
+    } else {
+      nextRules[row.type] = nextRules[row.type].filter((value) => value !== row.pattern);
+      nextRules[type].push(pattern);
+    }
+    return nextRules;
+  }
+
   async function saveEditRule() {
     const trimmed = editRulePattern.trim();
     if (!trimmed) return;
@@ -541,36 +497,10 @@
       return;
     }
     const shouldDeleteMatches = editRuleType === 'skip' && editDeleteMatchingDocuments;
-    // Update in the appropriate array
-    if (row.type === 'skip') {
-      rules.skip = rules.skip.map((p) => (p === row.pattern ? trimmed : p));
-    } else if (row.type === 'priority') {
-      rules.priority = rules.priority.map((p) => (p === row.pattern ? trimmed : p));
-    } else {
-      rules.versioning = rules.versioning.map((p) => (p === row.pattern ? trimmed : p));
-    }
-    // If type changed, move between arrays
-    if (editRuleType !== row.type) {
-      // Remove from old array
-      if (row.type === 'skip') {
-        rules.skip = rules.skip.filter((p) => p !== trimmed);
-      } else if (row.type === 'priority') {
-        rules.priority = rules.priority.filter((p) => p !== trimmed);
-      } else {
-        rules.versioning = rules.versioning.filter((p) => p !== trimmed);
-      }
-      // Add to new array
-      if (editRuleType === 'skip') {
-        rules.skip = [...rules.skip, trimmed];
-      } else if (editRuleType === 'priority') {
-        rules.priority = [...rules.priority, trimmed];
-      } else {
-        rules.versioning = [...rules.versioning, trimmed];
-      }
-    }
+    const nextRules = rulesWithEditedRule(row, trimmed, editRuleType);
     editingRuleIndex = null;
     editDeleteMatchingDocuments = false;
-    if (!(await saveRules())) return;
+    if (!(await saveRules(nextRules))) return;
     await deleteMatchesAfterSaving([trimmed], shouldDeleteMatches, 'Rule updated.');
   }
 </script>
@@ -1093,53 +1023,11 @@
   onAdd={addBulkRules}
 />
 
-<Dialog.Root bind:open={deleteConfirmOpen}>
-  <Dialog.Content
-    escapeKeydownBehavior="ignore"
-    onInteractOutside={(event) => event.preventDefault()}
-    showCloseButton={false}
-    class="border-border-brand bg-card-surface max-w-md gap-0 overflow-hidden rounded-none border-[3px] p-0 shadow-[6px_6px_0px_var(--brutal-shadow)]"
-  >
-    <Dialog.Header class="bg-hister-rose flex-row items-center gap-2 px-5 py-4">
-      <Dialog.Title class="flex items-center gap-2">
-        <Trash2 class="size-5 text-white" />
-        <span class="font-outfit text-lg font-extrabold text-white">Delete matching documents?</span
-        >
-      </Dialog.Title>
-    </Dialog.Header>
-    <div class="space-y-3 px-5 py-5">
-      <p class="font-inter text-text-brand-secondary text-sm">
-        {pendingDocumentDeletion?.matched ?? 0} existing document{pendingDocumentDeletion?.matched ===
-        1
-          ? ''
-          : 's'} match the saved skip
-        {pendingDocumentDeletion?.patterns.length === 1 ? 'rule' : 'rules'}.
-      </p>
-      <p class="font-inter text-text-brand-muted text-xs">
-        This permanently deletes the matching documents from the index. The saved skip
-        {pendingDocumentDeletion?.patterns.length === 1 ? 'rule' : 'rules'} will remain if you cancel.
-      </p>
-    </div>
-    <Dialog.Footer class="border-border-brand-muted bg-muted-surface border-t-[3px] px-5 py-3">
-      <Button
-        type="button"
-        variant="outline"
-        disabled={deletingMatchingDocuments}
-        onclick={cancelMatchingDocumentDeletion}
-        class="border-border-brand-muted text-text-brand-secondary rounded-none"
-      >
-        Cancel
-      </Button>
-      <Button
-        type="button"
-        disabled={deletingMatchingDocuments}
-        onclick={confirmMatchingDocumentDeletion}
-        class="bg-hister-rose font-space border-brutal-border rounded-none border-[3px] text-xs font-bold text-white uppercase"
-      >
-        {deletingMatchingDocuments
-          ? 'Deleting…'
-          : `Delete ${pendingDocumentDeletion?.matched ?? 0} document${pendingDocumentDeletion?.matched === 1 ? '' : 's'}`}
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+<DeleteMatchingDocumentsDialog
+  bind:open={deleteConfirmOpen}
+  matched={pendingDocumentDeletion?.matched ?? 0}
+  ruleCount={pendingDocumentDeletion?.patterns.length ?? 1}
+  deleting={deletingMatchingDocuments}
+  onCancel={cancelMatchingDocumentDeletion}
+  onConfirm={confirmMatchingDocumentDeletion}
+/>

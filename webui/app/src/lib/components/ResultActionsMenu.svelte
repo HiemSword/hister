@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import type { ResultState } from '$lib/result-state.svelte';
+  import DeleteMatchingDocumentsDialog from '$lib/components/DeleteMatchingDocumentsDialog.svelte';
   import { SkipRuleActions } from '@hister/components';
   import { Input } from '@hister/components/ui/input';
   import { Button } from '@hister/components/ui/button';
@@ -38,6 +39,25 @@
   }: Props = $props();
 
   let open = $state(false);
+  let deleteConfirmOpen = $state(false);
+  let deleteConfirmMatched = $state(0);
+  let resolveDeleteConfirmation: ((confirmed: boolean) => void) | null = null;
+
+  function confirmDeletion(matched: number): Promise<boolean> {
+    open = false;
+    deleteConfirmMatched = matched;
+    deleteConfirmOpen = true;
+    return new Promise((resolve) => {
+      resolveDeleteConfirmation = resolve;
+    });
+  }
+
+  function finishDeleteConfirmation(confirmed: boolean) {
+    deleteConfirmOpen = false;
+    deleteConfirmMatched = 0;
+    resolveDeleteConfirmation?.(confirmed);
+    resolveDeleteConfirmation = null;
+  }
 </script>
 
 {#if canWrite}
@@ -127,14 +147,15 @@
         </div>
         <SkipRuleActions
           onAddSkipRule={async (type, deleteMatches) => {
-            await resultState.addSkipRule(
+            await resultState.addSkipRule({
               url,
               domain,
               type,
               deleteMatches,
               removeResult,
               removeResultsByDomain,
-            );
+              confirmDeletion,
+            });
             if (deleteMatches) open = false;
           }}
         />
@@ -195,4 +216,10 @@
       </div>
     </DropdownMenu.Content>
   </DropdownMenu.Root>
+  <DeleteMatchingDocumentsDialog
+    bind:open={deleteConfirmOpen}
+    matched={deleteConfirmMatched}
+    onCancel={() => finishDeleteConfirmation(false)}
+    onConfirm={() => finishDeleteConfirmation(true)}
+  />
 {/if}
