@@ -96,6 +96,12 @@ Skip, priority, and versioning rules are matched against the **full URL**
 - A trailing `$` anchor will **not** match URLs that have a query string:
   `/login$` does not match `https://foo.com/login?auth=1`.
 
+When adding or editing a skip rule on the Rules page, select **Delete matching documents already
+in the index** to apply the saved rule to existing documents. The option is available only when
+the resulting rule type is skip and is disabled by default. When documents match, the page shows
+their count and asks for confirmation before deleting them. Cancelling keeps the saved rule and
+leaves the existing documents in the index.
+
 ## Storage
 
 In **single-user mode** (user handling disabled), rules are saved to and read

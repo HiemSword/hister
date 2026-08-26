@@ -44,6 +44,7 @@ You can search within specific fields using the `field:value` syntax:
 - **title:** - Search in page titles only
 - **text:** - Search in page content only
 - **url:** - Search in URLs only (bare file paths without `://` are automatically resolved to absolute `file://` URLs)
+- **url_re:** Search URLs with a Go regular expression
 - **domain:** - Search in domain names only
 - **label:** - Search in document labels only
 - **language:** - Filter by detected language (e.g., `en`, `de`, `fr`. Use `unknown` for languages Hister doesn't support)
@@ -221,6 +222,29 @@ title:*firewall*
 ```
 
 URL wildcard matching ignores letter case, so `url:*readme*` also matches a path ending in `README.md`.
+
+## URL Regular Expressions
+
+Use `url_re:` to match normalized page addresses with a Go regular expression. The expression uses
+the same `MatchString` behavior as indexing rules. It can therefore match any part of the URL unless
+you anchor it with `^` or `$`.
+
+```textplain
+url_re:^https?://([^/]+\.)?example\.com/private/
+```
+
+Quotes are optional. Use them when the expression contains whitespace.
+
+```textplain
+url_re:"^file:///.*/My Documents/.*\.pdf$"
+```
+
+Regular expression matching is case sensitive unless the expression enables case folding, for
+example with `(?i)`.
+
+```textplain
+url_re:(?i)/readme\.md$
+```
 
 ## Negation
 

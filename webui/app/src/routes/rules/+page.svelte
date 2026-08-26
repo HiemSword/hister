@@ -5,13 +5,15 @@
   const focusInput: Action<HTMLElement> = (node) => {
     (node.querySelector('input') as HTMLInputElement | null)?.focus();
   };
-  import { fetchConfig, apiFetch } from '$lib/api';
+  import { fetchConfig, apiFetch, getUserId } from '$lib/api';
   import { base } from '$app/paths';
   import BulkRulesDialog from '$lib/components/BulkRulesDialog.svelte';
+  import DeleteMatchingDocumentsOption from '$lib/components/DeleteMatchingDocumentsOption.svelte';
   import { Button } from '@hister/components/ui/button';
   import { Input } from '@hister/components/ui/input';
   import { Badge } from '@hister/components/ui/badge';
   import * as Card from '@hister/components/ui/card';
+  import * as Dialog from '@hister/components/ui/dialog';
   import * as Table from '@hister/components/ui/table';
   import {
     Shield,
@@ -44,6 +46,12 @@
     pattern: string;
     type: 'skip' | 'priority' | 'versioning';
     addedOrder: number;
+  }
+
+  interface PendingDocumentDeletion {
+    patterns: string[];
+    matched: number;
+    savedMessage: string;
   }
 
   function parseRulePatterns(value: string, existingPatterns: string[]) {
@@ -85,8 +93,13 @@
   let newAliasValue = $state('');
   let newRulePattern = $state('');
   let newRuleType: 'skip' | 'priority' | 'versioning' = $state('skip');
+  let deleteMatchingDocuments = $state(false);
   let bulkAddOpen = $state(false);
   let bulkRulePatterns = $state('');
+  let bulkDeleteMatchingDocuments = $state(false);
+  let deleteConfirmOpen = $state(false);
+  let deletingMatchingDocuments = $state(false);
+  let pendingDocumentDeletion = $state<PendingDocumentDeletion | null>(null);
 
   // Editing state for aliases
   let editingAliasKey = $state<string | null>(null);
@@ -97,6 +110,7 @@
   let editingRuleIndex = $state<number | null>(null);
   let editRulePattern = $state('');
   let editRuleType: 'skip' | 'priority' | 'versioning' = $state('skip');
+  let editDeleteMatchingDocuments = $state(false);
 
   // Filter state
   let aliasFilterOpen = $state(false);
@@ -268,13 +282,16 @@
       return;
     }
 
+    const shouldDeleteMatches = newRuleType === 'skip' && deleteMatchingDocuments;
     if (!(await saveRules(rulesWithPatterns([pattern])))) return;
     newRulePattern = '';
-    message = rulesAddedMessage(1, 0);
+    deleteMatchingDocuments = false;
+    await deleteMatchesAfterSaving([pattern], shouldDeleteMatches, rulesAddedMessage(1, 0));
   }
 
   function openBulkAdd() {
     bulkRulePatterns = '';
+    bulkDeleteMatchingDocuments = false;
     bulkAddOpen = true;
   }
 
@@ -283,17 +300,128 @@
 
     if (uniquePatterns.length === 0) {
       bulkRulePatterns = '';
+      bulkDeleteMatchingDocuments = false;
       bulkAddOpen = false;
       message = rulesAddedMessage(0, duplicateCount);
       isError = false;
       return;
     }
 
+    const shouldDeleteMatches = newRuleType === 'skip' && bulkDeleteMatchingDocuments;
     if (!(await saveRules(rulesWithPatterns(uniquePatterns)))) return;
 
     bulkRulePatterns = '';
+    bulkDeleteMatchingDocuments = false;
     bulkAddOpen = false;
-    message = rulesAddedMessage(uniquePatterns.length, duplicateCount);
+    await deleteMatchesAfterSaving(
+      uniquePatterns,
+      shouldDeleteMatches,
+      rulesAddedMessage(uniquePatterns.length, duplicateCount),
+    );
+  }
+
+  function quoteRegexpValue(pattern: string): string {
+    let escaped = '';
+    let backslashCount = 0;
+    for (const char of pattern) {
+      if (char === '\\') {
+        escaped += char;
+        backslashCount++;
+        continue;
+      }
+      if (char === '"' && backslashCount % 2 === 0) escaped += '\\';
+      escaped += char;
+      backslashCount = 0;
+    }
+    return escaped;
+  }
+
+  function deleteQuery(patterns: string[]): string {
+    const userID = getUserId();
+    const userFilter = userID === undefined ? '' : ` user_id:${userID}`;
+    const pattern = patterns.map((value) => `(${value})`).join('|');
+    return `url_re:"${quoteRegexpValue(pattern)}"${userFilter}`;
+  }
+
+  async function deleteRegexpMatches(patterns: string[]): Promise<number> {
+    const res = await apiFetch('/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: deleteQuery(patterns) }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(body.trim() || 'Failed to delete matching documents');
+    }
+    const data = await res.json();
+    return Number(data.deleted ?? 0);
+  }
+
+  async function countRegexpMatches(patterns: string[]): Promise<number> {
+    const res = await apiFetch('/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: deleteQuery(patterns), dry_run: true }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(body.trim() || 'Failed to count matching documents');
+    }
+    const data = await res.json();
+    return Number(data.matched ?? 0);
+  }
+
+  async function deleteMatchesAfterSaving(
+    patterns: string[],
+    enabled: boolean,
+    savedMessage: string,
+  ) {
+    if (!enabled) {
+      message = savedMessage;
+      return;
+    }
+    try {
+      const matched = await countRegexpMatches(patterns);
+      if (matched === 0) {
+        message = `${savedMessage} No matching documents found.`;
+        isError = false;
+        return;
+      }
+      pendingDocumentDeletion = { patterns, matched, savedMessage };
+      deleteConfirmOpen = true;
+      isError = false;
+    } catch (e) {
+      message = `${savedMessage} Matching documents could not be checked: ${String(e)}`;
+      isError = true;
+    }
+  }
+
+  async function confirmMatchingDocumentDeletion() {
+    const pending = pendingDocumentDeletion;
+    if (!pending) return;
+    deletingMatchingDocuments = true;
+    try {
+      const deleted = await deleteRegexpMatches(pending.patterns);
+      message = `${pending.savedMessage} ${deleted} matching document${deleted === 1 ? '' : 's'} deleted.`;
+      isError = false;
+    } catch (e) {
+      message = `${pending.savedMessage} Matching documents could not be deleted: ${String(e)}`;
+      isError = true;
+    } finally {
+      deletingMatchingDocuments = false;
+      deleteConfirmOpen = false;
+      pendingDocumentDeletion = null;
+    }
+  }
+
+  function cancelMatchingDocumentDeletion() {
+    const savedMessage = pendingDocumentDeletion?.savedMessage;
+    deleteConfirmOpen = false;
+    pendingDocumentDeletion = null;
+    if (savedMessage) {
+      message = `${savedMessage} Matching documents were not deleted.`;
+      isError = false;
+    }
   }
 
   async function deleteAlias(keyword: string) {
@@ -387,13 +515,15 @@
     editingRuleIndex = index;
     editRulePattern = row.pattern;
     editRuleType = row.type;
+    editDeleteMatchingDocuments = false;
   }
 
   function cancelEditRule() {
     editingRuleIndex = null;
+    editDeleteMatchingDocuments = false;
   }
 
-  function saveEditRule() {
+  async function saveEditRule() {
     const trimmed = editRulePattern.trim();
     if (!trimmed) return;
     const row = ruleRows[editingRuleIndex!];
@@ -407,8 +537,10 @@
       message = `Rule "${trimmed}" already exists.`;
       isError = true;
       editingRuleIndex = null;
+      editDeleteMatchingDocuments = false;
       return;
     }
+    const shouldDeleteMatches = editRuleType === 'skip' && editDeleteMatchingDocuments;
     // Update in the appropriate array
     if (row.type === 'skip') {
       rules.skip = rules.skip.map((p) => (p === row.pattern ? trimmed : p));
@@ -437,7 +569,9 @@
       }
     }
     editingRuleIndex = null;
-    saveRules();
+    editDeleteMatchingDocuments = false;
+    if (!(await saveRules())) return;
+    await deleteMatchesAfterSaving([trimmed], shouldDeleteMatches, 'Rule updated.');
   }
 </script>
 
@@ -754,58 +888,68 @@
         <div
           class="bg-muted-surface border-brutal-border flex items-center border-b-[3px] px-4 py-4 md:px-5 md:py-5"
         >
-          <div class="flex w-full flex-col items-stretch gap-3 md:flex-row md:items-end">
-            <div class="flex flex-1 flex-col gap-1">
-              <Label for="rule-pattern" class="font-outfit text-text-brand text-sm font-bold"
-                >Pattern</Label
-              >
-              <Input
-                id="rule-pattern"
-                type="text"
-                variant="brutal"
-                bind:value={newRulePattern}
-                placeholder="Enter Go regexp pattern"
-                class="bg-card-surface focus-visible:border-hister-coral h-10 w-full px-3"
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') addRule();
-                }}
-              />
+          <div class="flex w-full flex-col gap-3">
+            <div class="flex flex-col items-stretch gap-3 md:flex-row md:items-end">
+              <div class="flex flex-1 flex-col gap-1">
+                <Label for="rule-pattern" class="font-outfit text-text-brand text-sm font-bold"
+                  >Pattern</Label
+                >
+                <Input
+                  id="rule-pattern"
+                  type="text"
+                  variant="brutal"
+                  bind:value={newRulePattern}
+                  placeholder="Enter Go regexp pattern"
+                  class="bg-card-surface focus-visible:border-hister-coral h-10 w-full px-3"
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') addRule();
+                  }}
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <Label for="rule-type" class="font-outfit text-text-brand text-sm font-bold"
+                  >Type</Label
+                >
+                <select
+                  id="rule-type"
+                  value={newRuleType}
+                  onchange={(event) => {
+                    newRuleType = (event.currentTarget as HTMLSelectElement)
+                      .value as typeof newRuleType;
+                    if (newRuleType !== 'skip') deleteMatchingDocuments = false;
+                  }}
+                  class="bg-card-surface border-brutal-border font-space text-text-brand h-10 w-full shrink-0 cursor-pointer appearance-none border-[3px] px-3 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-27.5"
+                >
+                  <option value="skip">SKIP</option>
+                  <option value="priority">PRIORITY</option>
+                  <option value="versioning">VERSION</option>
+                </select>
+              </div>
+              <div class="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onclick={openBulkAdd}
+                  disabled={saving}
+                  class="bg-card-surface text-text-brand-secondary font-space border-brutal-border brutal-press h-10 flex-1 gap-2 rounded-none border-[3px] px-4 text-xs font-bold tracking-[0.5px] uppercase md:flex-none"
+                >
+                  <ListPlus class="size-4 shrink-0" />
+                  Bulk add
+                </Button>
+                <Button
+                  type="button"
+                  onclick={addRule}
+                  disabled={saving || !newRulePattern.trim()}
+                  class="bg-hister-coral font-space border-brutal-border brutal-press h-10 flex-1 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] text-white uppercase md:flex-none"
+                >
+                  <Plus class="size-4 shrink-0" />
+                  Add
+                </Button>
+              </div>
             </div>
-            <div class="flex flex-col gap-1">
-              <Label for="rule-type" class="font-outfit text-text-brand text-sm font-bold"
-                >Type</Label
-              >
-              <select
-                id="rule-type"
-                bind:value={newRuleType}
-                class="bg-card-surface border-brutal-border font-space text-text-brand h-10 w-full shrink-0 cursor-pointer appearance-none border-[3px] px-3 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-27.5"
-              >
-                <option value="skip">SKIP</option>
-                <option value="priority">PRIORITY</option>
-                <option value="versioning">VERSION</option>
-              </select>
-            </div>
-            <div class="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onclick={openBulkAdd}
-                disabled={saving}
-                class="bg-card-surface text-text-brand-secondary font-space border-brutal-border brutal-press h-10 flex-1 gap-2 rounded-none border-[3px] px-4 text-xs font-bold tracking-[0.5px] uppercase md:flex-none"
-              >
-                <ListPlus class="size-4 shrink-0" />
-                Bulk add
-              </Button>
-              <Button
-                type="button"
-                onclick={addRule}
-                disabled={saving || !newRulePattern.trim()}
-                class="bg-hister-coral font-space border-brutal-border brutal-press h-10 flex-1 gap-2 border-[3px] px-5 text-sm font-bold tracking-[1px] text-white uppercase md:flex-none"
-              >
-                <Plus class="size-4 shrink-0" />
-                Add
-              </Button>
-            </div>
+            {#if newRuleType === 'skip'}
+              <DeleteMatchingDocumentsOption bind:checked={deleteMatchingDocuments} />
+            {/if}
           </div>
         </div>
 
@@ -852,25 +996,37 @@
                 <Table.Row class="border-brutal-border border-b-[3px]">
                   {#if editingRuleIndex === i}
                     <Table.Cell class="px-2 py-2 md:px-3" colspan={2}>
-                      <div class="flex items-center gap-2">
-                        <Input
-                          type="text"
-                          variant="brutal"
-                          bind:value={editRulePattern}
-                          class="bg-card-surface focus-visible:border-hister-coral h-8 flex-1 px-2 text-sm"
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') saveEditRule();
-                            if (e.key === 'Escape') cancelEditRule();
-                          }}
-                        />
-                        <select
-                          bind:value={editRuleType}
-                          class="bg-card-surface border-brutal-border font-space text-text-brand h-8 w-20 shrink-0 cursor-pointer appearance-none border-[3px] px-2 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-25 md:px-3"
-                        >
-                          <option value="skip">SKIP</option>
-                          <option value="priority">PRIORITY</option>
-                          <option value="versioning">VERSION</option>
-                        </select>
+                      <div class="flex flex-col gap-2">
+                        <div class="flex items-center gap-2">
+                          <Input
+                            type="text"
+                            variant="brutal"
+                            bind:value={editRulePattern}
+                            class="bg-card-surface focus-visible:border-hister-coral h-8 flex-1 px-2 text-sm"
+                            onkeydown={(e) => {
+                              if (e.key === 'Enter') saveEditRule();
+                              if (e.key === 'Escape') cancelEditRule();
+                            }}
+                          />
+                          <select
+                            value={editRuleType}
+                            onchange={(event) => {
+                              editRuleType = (event.currentTarget as HTMLSelectElement)
+                                .value as typeof editRuleType;
+                              if (editRuleType !== 'skip') editDeleteMatchingDocuments = false;
+                            }}
+                            class="bg-card-surface border-brutal-border font-space text-text-brand h-8 w-20 shrink-0 cursor-pointer appearance-none border-[3px] px-2 text-center text-xs font-bold tracking-[0.5px] outline-none md:w-25 md:px-3"
+                          >
+                            <option value="skip">SKIP</option>
+                            <option value="priority">PRIORITY</option>
+                            <option value="versioning">VERSION</option>
+                          </select>
+                        </div>
+                        {#if editRuleType === 'skip'}
+                          <DeleteMatchingDocumentsOption
+                            bind:checked={editDeleteMatchingDocuments}
+                          />
+                        {/if}
                       </div>
                     </Table.Cell>
                     <Table.Cell class="w-16 px-1 py-2 md:w-20 md:px-3">
@@ -930,8 +1086,60 @@
   bind:open={bulkAddOpen}
   bind:patterns={bulkRulePatterns}
   bind:ruleType={newRuleType}
+  bind:deleteMatches={bulkDeleteMatchingDocuments}
   {saving}
   newCount={bulkRuleSummary.uniquePatterns.length}
   duplicateCount={bulkRuleSummary.duplicateCount}
   onAdd={addBulkRules}
 />
+
+<Dialog.Root bind:open={deleteConfirmOpen}>
+  <Dialog.Content
+    escapeKeydownBehavior="ignore"
+    onInteractOutside={(event) => event.preventDefault()}
+    showCloseButton={false}
+    class="border-border-brand bg-card-surface max-w-md gap-0 overflow-hidden rounded-none border-[3px] p-0 shadow-[6px_6px_0px_var(--brutal-shadow)]"
+  >
+    <Dialog.Header class="bg-hister-rose flex-row items-center gap-2 px-5 py-4">
+      <Dialog.Title class="flex items-center gap-2">
+        <Trash2 class="size-5 text-white" />
+        <span class="font-outfit text-lg font-extrabold text-white">Delete matching documents?</span
+        >
+      </Dialog.Title>
+    </Dialog.Header>
+    <div class="space-y-3 px-5 py-5">
+      <p class="font-inter text-text-brand-secondary text-sm">
+        {pendingDocumentDeletion?.matched ?? 0} existing document{pendingDocumentDeletion?.matched ===
+        1
+          ? ''
+          : 's'} match the saved skip
+        {pendingDocumentDeletion?.patterns.length === 1 ? 'rule' : 'rules'}.
+      </p>
+      <p class="font-inter text-text-brand-muted text-xs">
+        This permanently deletes the matching documents from the index. The saved skip
+        {pendingDocumentDeletion?.patterns.length === 1 ? 'rule' : 'rules'} will remain if you cancel.
+      </p>
+    </div>
+    <Dialog.Footer class="border-border-brand-muted bg-muted-surface border-t-[3px] px-5 py-3">
+      <Button
+        type="button"
+        variant="outline"
+        disabled={deletingMatchingDocuments}
+        onclick={cancelMatchingDocumentDeletion}
+        class="border-border-brand-muted text-text-brand-secondary rounded-none"
+      >
+        Cancel
+      </Button>
+      <Button
+        type="button"
+        disabled={deletingMatchingDocuments}
+        onclick={confirmMatchingDocumentDeletion}
+        class="bg-hister-rose font-space border-brutal-border rounded-none border-[3px] text-xs font-bold text-white uppercase"
+      >
+        {deletingMatchingDocuments
+          ? 'Deleting…'
+          : `Delete ${pendingDocumentDeletion?.matched ?? 0} document${pendingDocumentDeletion?.matched === 1 ? '' : 's'}`}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

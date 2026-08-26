@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '@hister/components/ui/button';
+  import DeleteMatchingDocumentsOption from '$lib/components/DeleteMatchingDocumentsOption.svelte';
   import * as Dialog from '@hister/components/ui/dialog';
   import { Label } from '@hister/components/ui/label';
   import { Textarea } from '@hister/components/ui/textarea';
@@ -11,6 +12,7 @@
     open: boolean;
     patterns: string;
     ruleType: RuleType;
+    deleteMatches: boolean;
     saving: boolean;
     newCount: number;
     duplicateCount: number;
@@ -21,6 +23,7 @@
     open = $bindable(),
     patterns = $bindable(),
     ruleType = $bindable(),
+    deleteMatches = $bindable(),
     saving,
     newCount,
     duplicateCount,
@@ -87,7 +90,11 @@
         >
         <select
           id="bulk-rule-type"
-          bind:value={ruleType}
+          value={ruleType}
+          onchange={(event) => {
+            ruleType = (event.currentTarget as HTMLSelectElement).value as RuleType;
+            if (ruleType !== 'skip') deleteMatches = false;
+          }}
           class="bg-page-bg border-brutal-border font-space text-text-brand h-10 w-full cursor-pointer appearance-none border-[3px] px-3 text-xs font-bold tracking-[0.5px] outline-none"
         >
           <option value="skip">SKIP</option>
@@ -95,6 +102,10 @@
           <option value="versioning">VERSION</option>
         </select>
       </div>
+
+      {#if ruleType === 'skip'}
+        <DeleteMatchingDocumentsOption bind:checked={deleteMatches} />
+      {/if}
     </div>
 
     <Dialog.Footer class="border-border-brand-muted bg-muted-surface border-t-[3px] px-5 py-3">

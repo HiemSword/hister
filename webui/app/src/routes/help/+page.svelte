@@ -39,6 +39,11 @@
     <p>Prefix words or phrases with <Kbd>-</Kbd> to exclude matching documents.</p>
     <p>Use <code>url:</code> prefix to search only in the URL field.</p>
     <p>
+      Use <code>url_re:</code> with a Go regular expression to match complete page addresses. Quotes
+      are optional unless the expression contains whitespace. For example,
+      <code>url_re:^https://example\.com/private/</code>.
+    </p>
+    <p>
       Use <code>visits:</code> to filter by visit count, such as <code>visits:1</code>,
       <code>visits:2..4</code>, or <code>visits:10..</code>.
     </p>
