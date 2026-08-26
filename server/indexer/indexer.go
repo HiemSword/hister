@@ -1594,6 +1594,19 @@ func (i *Indexer) DeleteByQuery(text string, userID *uint, onDelete func(url str
 	return count, nil
 }
 
+func (i *Indexer) CountByQuery(text string, userID *uint) (int, error) {
+	q, err := documentMutationQuery(text, userID)
+	if err != nil {
+		return 0, err
+	}
+	req := bleve.NewSearchRequestOptions(q, 0, 0, false)
+	res, err := i.searchIndexes(req)
+	if err != nil {
+		return 0, err
+	}
+	return int(res.Total), nil
+}
+
 func (i *Indexer) Search(q *Query) (*Results, error) {
 	return i.search(i.semanticConfig, q)
 }
@@ -1603,7 +1616,11 @@ func (i *Indexer) search(semanticConfig config.SemanticSearch, q *Query) (*Resul
 	if expression.HasSort {
 		q.Sort = expression.Sort
 	}
-	req := bleve.NewSearchRequest(q.create(expression.Text))
+	searchQuery, err := q.create(expression.Text)
+	if err != nil {
+		return nil, err
+	}
+	req := bleve.NewSearchRequest(searchQuery)
 	req.Fields = allFields
 
 	if q.FacetsOnly {
@@ -1957,12 +1974,16 @@ func (idx *Indexer) resFromHit(h *search.DocumentMatch, include resultInclude) *
 	return d
 }
 
-func (q *Query) create(text string) query.Query {
+func (q *Query) create(text string) (query.Query, error) {
 	var sq query.Query
 	if q.MatchAll {
 		sq = query.NewMatchAllQuery()
 	} else {
-		sq = querybuilder.Build(text)
+		var err error
+		sq, err = querybuilder.BuildValidated(text)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if q.DateFrom != 0 && q.DateTo == 0 {
@@ -1995,10 +2016,10 @@ func (q *Query) create(text string) query.Query {
 			rq.SetBoost(100)
 			bq.AddShould(rq)
 		}
-		return bq
+		return bq, nil
 	}
 
-	return sq
+	return sq, nil
 }
 
 func (q *Query) legacyDateFilterQuery() (query.Query, bool) {

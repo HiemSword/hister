@@ -1,6 +1,7 @@
 package querybuilder
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -13,13 +14,50 @@ import (
 	"github.com/asciimoo/hister/server/indexer/searchschema"
 
 	"github.com/blevesearch/bleve/v2"
+	"github.com/blevesearch/bleve/v2/search"
 	"github.com/blevesearch/bleve/v2/search/query"
 )
 
 var (
 	relativeTimeFilterPattern = regexp.MustCompile(`^(<=|>=|<|>)([0-9]+)([smhdw])$`)
 	absoluteDateFilterPattern = regexp.MustCompile(`^(<=|>=|<|>)([0-9]{4}-[0-9]{2}-[0-9]{2})$`)
+	ErrInvalidRegexp          = errors.New("invalid URL regexp")
 )
+
+const MaxURLRegexpLength = 4096
+
+// BuildValidated builds a query after validating URL regular expression
+// filters. Other query syntax retains Build's existing fallback behavior.
+func BuildValidated(s string) (query.Query, error) {
+	qt, err := Tokenize(s)
+	if err == nil {
+		for _, token := range qt {
+			pattern, ok := urlRegexpToken(token)
+			if !ok {
+				continue
+			}
+			if pattern == "" {
+				return nil, fmt.Errorf("%w: expression is empty", ErrInvalidRegexp)
+			}
+			if len(pattern) > MaxURLRegexpLength {
+				return nil, fmt.Errorf("%w: expression exceeds %d bytes", ErrInvalidRegexp, MaxURLRegexpLength)
+			}
+			if _, err := regexp.Compile(pattern); err != nil {
+				return nil, fmt.Errorf("%w %q: %v", ErrInvalidRegexp, pattern, err)
+			}
+		}
+	}
+	return Build(s), nil
+}
+
+func urlRegexpToken(token Token) (string, bool) {
+	if token.Type != TokenWord && token.Type != TokenQuoted {
+		return "", false
+	}
+	value := strings.TrimPrefix(token.Value, "-")
+	field, pattern, ok := fieldFilterValue(value)
+	return pattern, ok && field.Kind == searchschema.FieldKindRegexp
+}
 
 func Build(s string) query.Query {
 	if strings.TrimSpace(s) == "" {
@@ -220,6 +258,9 @@ func caseInsensitiveWildcardRegexp(value string) string {
 // URL and other fields retain their existing query behavior.
 func buildQuotedFieldQuery(field, v string) query.Query {
 	definition, ok := searchschema.Field(field)
+	if ok && definition.Kind == searchschema.FieldKindRegexp {
+		return buildURLRegexpQuery(definition, v)
+	}
 	if ok && definition.Phrase {
 		q := bleve.NewMatchPhraseQuery(v)
 		q.SetField(definition.IndexField)
@@ -227,6 +268,24 @@ func buildQuotedFieldQuery(field, v string) query.Query {
 		return q
 	}
 	return buildFieldQuery(field, v)
+}
+
+// buildURLRegexpQuery applies the same Go regexp MatchString semantics used by
+// indexing rules. URL doc values contain the complete normalized URL.
+func buildURLRegexpQuery(field searchschema.FieldDefinition, pattern string) query.Query {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return query.NewMatchNoneQuery()
+	}
+	return query.NewCustomFilterQueryWithFilter(
+		query.NewMatchAllQuery(),
+		func(match *search.DocumentMatch) bool {
+			urlValue, ok := match.Fields[field.IndexField].(string)
+			return ok && re.MatchString(urlValue)
+		},
+		[]string{field.IndexField},
+		nil,
+	)
 }
 
 func fieldFilterValue(value string) (searchschema.FieldDefinition, string, bool) {
@@ -442,8 +501,11 @@ func getTokenQuery(t Token, now time.Time) (query.Query, bool) {
 			v = v[1:]
 		}
 		field, value, hasField := fieldFilterValue(v)
-		if hasField && (field.Kind == searchschema.FieldKindText || field.Kind == searchschema.FieldKindKeyword) {
+		if hasField && (field.Kind == searchschema.FieldKindText || field.Kind == searchschema.FieldKindKeyword || field.Kind == searchschema.FieldKindRegexp) {
 			v := value
+			if field.Kind == searchschema.FieldKindRegexp {
+				return buildURLRegexpQuery(field, v), negated
+			}
 			if strings.HasPrefix(v, "-") && len(v) > 1 {
 				negated = true
 				v = v[1:]
@@ -470,10 +532,14 @@ func getTokenQuery(t Token, now time.Time) (query.Query, bool) {
 		}
 		field, v, hasField := fieldFilterValue(t.Value)
 		if hasField {
-			if q, ok := buildFieldAlternationQuery(field.Name, v, now); ok {
-				return q, negated
+			if field.Kind != searchschema.FieldKindRegexp {
+				if q, ok := buildFieldAlternationQuery(field.Name, v, now); ok {
+					return q, negated
+				}
 			}
 			switch field.Kind {
+			case searchschema.FieldKindRegexp:
+				return buildURLRegexpQuery(field, v), negated
 			case searchschema.FieldKindEnum:
 				if value, ok := searchschema.Value(field.ValueSet, v); ok {
 					q := bleve.NewNumericRangeQuery(value.Min, value.Max)

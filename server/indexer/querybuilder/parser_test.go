@@ -177,6 +177,29 @@ func Test_tokenize_field_prefix(t *testing.T) {
 	}
 }
 
+func Test_tokenize_unquoted_url_regexp_preserves_backslashes(t *testing.T) {
+	input := `url_re:^https?://example\.com/(private|login)$`
+	tokens, err := Tokenize(input)
+	if err != nil {
+		t.Fatalf("Tokenize returned error: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0].Type != TokenWord || tokens[0].Value != input {
+		t.Fatalf("Tokenize(%q) = %#v", input, tokens)
+	}
+}
+
+func Test_tokenize_quoted_url_regexp_preserves_backslashes(t *testing.T) {
+	input := `url_re:"^file:///.*/My Documents/.*\.pdf$"`
+	tokens, err := Tokenize(input)
+	if err != nil {
+		t.Fatalf("Tokenize returned error: %v", err)
+	}
+	want := `url_re:^file:///.*/My Documents/.*\.pdf$`
+	if len(tokens) != 1 || tokens[0].Type != TokenQuoted || tokens[0].Value != want {
+		t.Fatalf("Tokenize(%q) = %#v, want value %q", input, tokens, want)
+	}
+}
+
 func Test_tokenize_mixed_tokens(t *testing.T) {
 	tokens, err := Tokenize(`golang "web framework" (gin|echo)`)
 	if err != nil {

@@ -57,6 +57,40 @@ func TestIndexerInstancesAreIndependent(t *testing.T) {
 	}
 }
 
+func TestSearchURLRegexpUsesGoMatchSemantics(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+
+	documents := []*document.Document{
+		{URL: "https://example.com/private/one", Title: "Private", Processed: true},
+		{URL: "https://example.com/public", Title: "Public", Processed: true},
+		{URL: "https://example.org/private/two", Title: "Other domain", Processed: true},
+	}
+	for _, d := range documents {
+		if err := idx.Add(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		query string
+		want  string
+	}{
+		{query: `url_re:example\.com/private`, want: documents[0].URL},
+		{query: `url_re:^https://example\.com/private/.+$`, want: documents[0].URL},
+		{query: `url_re:"example\.org/private"`, want: documents[2].URL},
+	}
+	for _, test := range tests {
+		result, err := idx.Search(&Query{Text: test.query})
+		if err != nil {
+			t.Fatalf("Search(%q): %v", test.query, err)
+		}
+		if len(result.Documents) != 1 || result.Documents[0].URL != test.want {
+			t.Fatalf("Search(%q) returned %#v, want %q", test.query, result.Documents, test.want)
+		}
+	}
+}
+
 func TestConcurrentLanguageIndexCreation(t *testing.T) {
 	idx := newTestIndexer(t, testutil.Config(t))
 	defer idx.Close()

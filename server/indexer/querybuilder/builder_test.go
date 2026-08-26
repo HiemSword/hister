@@ -1,6 +1,7 @@
 package querybuilder
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -386,6 +387,50 @@ func Test_build_quoted_url_field(t *testing.T) {
 	}
 	if tq.FieldVal != "url" {
 		t.Fatalf("expected field %q, got %q", "url", tq.FieldVal)
+	}
+}
+
+func Test_build_url_regexp_field_uses_custom_filter(t *testing.T) {
+	for _, input := range []string{
+		`url_re:^https?://example\.com/(private|login)$`,
+		`url_re:"^https?://example\.com/(private|login)$"`,
+	} {
+		bq := buildBoolQ(t, input)
+		clauses := mustClauses(t, bq)
+		if len(clauses) != 1 {
+			t.Fatalf("Build(%q) produced %d must clauses, want 1", input, len(clauses))
+		}
+		custom, ok := clauses[0].(*query.CustomFilterQuery)
+		if !ok {
+			t.Fatalf("Build(%q) produced %T, want *query.CustomFilterQuery", input, clauses[0])
+		}
+		if len(custom.Fields) != 1 || custom.Fields[0] != "url" {
+			t.Fatalf("Build(%q) custom filter fields = %#v, want url", input, custom.Fields)
+		}
+	}
+}
+
+func Test_build_url_regexp_keeps_parenthesized_alternation(t *testing.T) {
+	bq := buildBoolQ(t, `url_re:(example\.com|example\.org)`)
+	clauses := mustClauses(t, bq)
+	if len(clauses) != 1 {
+		t.Fatalf("expected 1 must clause, got %d", len(clauses))
+	}
+	if _, ok := clauses[0].(*query.CustomFilterQuery); !ok {
+		t.Fatalf("expected regexp custom filter, got %T", clauses[0])
+	}
+}
+
+func Test_build_validated_rejects_invalid_url_regexp(t *testing.T) {
+	if _, err := BuildValidated(`url_re:(unclosed`); !errors.Is(err, ErrInvalidRegexp) {
+		t.Fatalf("BuildValidated error = %v, want ErrInvalidRegexp", err)
+	}
+	if _, err := BuildValidated(`url_re:`); !errors.Is(err, ErrInvalidRegexp) {
+		t.Fatalf("BuildValidated empty error = %v, want ErrInvalidRegexp", err)
+	}
+	tooLong := "url_re:" + strings.Repeat("a", MaxURLRegexpLength+1)
+	if _, err := BuildValidated(tooLong); !errors.Is(err, ErrInvalidRegexp) {
+		t.Fatalf("BuildValidated long error = %v, want ErrInvalidRegexp", err)
 	}
 }
 

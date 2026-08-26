@@ -34,7 +34,10 @@ func documentMutationQuery(text string, userID *uint) (query.Query, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, ErrEmptyFilter
 	}
-	q := querybuilder.Build(text)
+	q, err := querybuilder.BuildValidated(text)
+	if err != nil {
+		return nil, err
+	}
 	if userID == nil {
 		return q, nil
 	}

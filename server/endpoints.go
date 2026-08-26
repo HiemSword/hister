@@ -25,6 +25,7 @@ import (
 	"github.com/asciimoo/hister/server/extractor"
 	"github.com/asciimoo/hister/server/extractor/sdk"
 	"github.com/asciimoo/hister/server/indexer"
+	"github.com/asciimoo/hister/server/indexer/querybuilder"
 	"github.com/asciimoo/hister/server/indexer/searchschema"
 	"github.com/asciimoo/hister/server/model"
 	"github.com/asciimoo/hister/server/timeline"
@@ -476,6 +477,10 @@ func parseSearchQueryParams(r *http.Request) (*indexer.Query, error) {
 func serveSearchHTTP(c *webContext, query *indexer.Query) {
 	r, err := doSearch(c.Indexer, query, c.effectiveRules(), c.UserID, historyEnabled(c))
 	if err != nil {
+		if errors.Is(err, querybuilder.ErrInvalidRegexp) {
+			http.Error(c.Response, err.Error(), http.StatusBadRequest)
+			return
+		}
 		log.Error().Err(err).Msg("search error")
 		serve500(c)
 		return
@@ -523,8 +528,16 @@ func serveSearchWebSocket(c *webContext) {
 		}
 		res, err := doSearch(c.Indexer, query, c.effectiveRules(), c.UserID, historyEnabled(c))
 		if err != nil {
-			log.Error().Err(err).Msg("search error")
-			continue
+			if errors.Is(err, querybuilder.ErrInvalidRegexp) {
+				res = &indexer.Results{
+					Query:     query,
+					Documents: []*document.Document{},
+					History:   []*model.URLCount{},
+				}
+			} else {
+				log.Error().Err(err).Msg("search error")
+				continue
+			}
 		}
 		jr, err := json.Marshal(res)
 		if err != nil {
@@ -1693,7 +1706,8 @@ func serveDeleteAlias(c *webContext) {
 
 func serveDelete(c *webContext) {
 	var req struct {
-		Query string `json:"query"`
+		Query  string `json:"query"`
+		DryRun bool   `json:"dry_run"`
 	}
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
 		http.Error(c.Response, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -1704,13 +1718,27 @@ func serveDelete(c *webContext) {
 	if c.Config.App.UserHandling && !c.IsAdmin {
 		userID = &c.UserID
 	}
+	if req.DryRun {
+		count, err := c.Indexer.CountByQuery(req.Query, userID)
+		if err != nil {
+			if errors.Is(err, indexer.ErrEmptyFilter) || errors.Is(err, querybuilder.ErrInvalidRegexp) {
+				http.Error(c.Response, err.Error(), http.StatusBadRequest)
+				return
+			}
+			log.Error().Err(err).Msg("delete dry run failed")
+			serve500(c)
+			return
+		}
+		c.JSON(map[string]any{"matched": count})
+		return
+	}
 	count, err := c.Indexer.DeleteByQuery(req.Query, userID, func(url string, uid uint) {
 		if err := model.DeleteHistoryURL(uid, url); err != nil {
 			log.Warn().Err(err).Str("url", url).Msg("failed to delete history for deleted document")
 		}
 	})
 	if err != nil {
-		if errors.Is(err, indexer.ErrEmptyFilter) {
+		if errors.Is(err, indexer.ErrEmptyFilter) || errors.Is(err, querybuilder.ErrInvalidRegexp) {
 			http.Error(c.Response, err.Error(), http.StatusBadRequest)
 			return
 		}

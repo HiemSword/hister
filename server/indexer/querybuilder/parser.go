@@ -207,6 +207,8 @@ func parseAlternationParts(value string) ([]Token, error) {
 func (l *Lexer) readWord() (Token, error) {
 	var builder strings.Builder
 	tt := TokenWord
+	remaining := string(l.input[l.pos-1:])
+	preserveBackslashes := strings.HasPrefix(remaining, "url_re:") || strings.HasPrefix(remaining, "-url_re:")
 
 	quote := false
 	escaped := false
@@ -219,6 +221,9 @@ func (l *Lexer) readWord() (Token, error) {
 		}
 		if l.char == '\\' && !escaped {
 			escaped = true
+			if preserveBackslashes {
+				builder.WriteRune(l.char)
+			}
 		} else {
 			escaped = false
 			if !skip {

@@ -736,6 +736,12 @@ func init() {
 					Required:    true,
 					Description: "Search query string selecting documents to delete (same syntax as the search endpoint)",
 				},
+				{
+					Name:        "dry_run",
+					Type:        "bool",
+					Required:    false,
+					Description: "Return the number of matching documents without deleting them",
+				},
 			},
 		},
 		{

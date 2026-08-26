@@ -14,7 +14,7 @@ import (
 	"github.com/asciimoo/hister/server/document"
 )
 
-const Version = 2
+const Version = 3
 
 type FieldKind string
 
@@ -25,6 +25,7 @@ const (
 	FieldKindNumericRange FieldKind = "numeric_range"
 	FieldKindTime         FieldKind = "time"
 	FieldKindInteger      FieldKind = "integer"
+	FieldKindRegexp       FieldKind = "regexp"
 )
 
 type FacetKind string
@@ -139,6 +140,7 @@ var fields = []FieldDefinition{
 	{Name: "domain", Label: "Domain", Description: "Limit results to one domain", Kind: FieldKindKeyword, IndexField: "domain", Weight: 8, Visible: true, DefaultWildcard: true},
 	{Name: "title", Label: "Title", Description: "Search only page titles", Kind: FieldKindText, IndexField: "title", Weight: 12, Visible: true, Phrase: true, DefaultSearch: true},
 	{Name: "url", Label: "URL", Description: "Search only page addresses", Kind: FieldKindKeyword, IndexField: "url", Weight: 4, Visible: true, NormalizeFilePath: true, DefaultWildcard: true},
+	{Name: "url_re", Label: "URL regexp", Description: "Search page addresses with a Go regular expression", Kind: FieldKindRegexp, IndexField: "url", Weight: 4, Visible: true},
 	{Name: "text", Label: "Text", Description: "Search only document content", Kind: FieldKindText, IndexField: "text", Weight: 1, Visible: true, Phrase: true, DefaultSearch: true},
 	{Name: "type", Label: "Type", Description: "Filter web, local, or remote file documents", Kind: FieldKindEnum, ValueSet: "document_types", IndexField: "type", Visible: true},
 	{Name: "language", Label: "Language", Description: "Filter by document language", Kind: FieldKindText, IndexField: "language", Weight: 1, Visible: true},
