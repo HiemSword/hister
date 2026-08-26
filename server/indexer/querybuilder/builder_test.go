@@ -432,6 +432,9 @@ func Test_build_validated_rejects_invalid_url_regexp(t *testing.T) {
 	if _, err := BuildValidated(tooLong); !errors.Is(err, ErrInvalidRegexp) {
 		t.Fatalf("BuildValidated long error = %v, want ErrInvalidRegexp", err)
 	}
+	if _, err := BuildValidated(`(url_re:[|url_re:example)`); !errors.Is(err, ErrInvalidRegexp) {
+		t.Fatalf("BuildValidated alternation error = %v, want ErrInvalidRegexp", err)
+	}
 }
 
 // Test that url:"..." quoted syntax produces a TermQuery (supports spaces in URLs).

@@ -31,23 +31,36 @@ const MaxURLRegexpLength = 4096
 func BuildValidated(s string) (query.Query, error) {
 	qt, err := Tokenize(s)
 	if err == nil {
-		for _, token := range qt {
-			pattern, ok := urlRegexpToken(token)
-			if !ok {
-				continue
-			}
-			if pattern == "" {
-				return nil, fmt.Errorf("%w: expression is empty", ErrInvalidRegexp)
-			}
-			if len(pattern) > MaxURLRegexpLength {
-				return nil, fmt.Errorf("%w: expression exceeds %d bytes", ErrInvalidRegexp, MaxURLRegexpLength)
-			}
-			if _, err := regexp.Compile(pattern); err != nil {
-				return nil, fmt.Errorf("%w %q: %v", ErrInvalidRegexp, pattern, err)
-			}
+		if err := validateURLRegexps(qt); err != nil {
+			return nil, err
 		}
 	}
 	return Build(s), nil
+}
+
+func validateURLRegexps(tokens []Token) error {
+	for _, token := range tokens {
+		if token.Type == TokenAlternation {
+			if err := validateURLRegexps(token.Parts); err != nil {
+				return err
+			}
+			continue
+		}
+		pattern, ok := urlRegexpToken(token)
+		if !ok {
+			continue
+		}
+		if pattern == "" {
+			return fmt.Errorf("%w: expression is empty", ErrInvalidRegexp)
+		}
+		if len(pattern) > MaxURLRegexpLength {
+			return fmt.Errorf("%w: expression exceeds %d bytes", ErrInvalidRegexp, MaxURLRegexpLength)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("%w %q: %v", ErrInvalidRegexp, pattern, err)
+		}
+	}
+	return nil
 }
 
 func urlRegexpToken(token Token) (string, bool) {

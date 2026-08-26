@@ -1594,6 +1594,8 @@ func (i *Indexer) DeleteByQuery(text string, userID *uint, onDelete func(url str
 	return count, nil
 }
 
+// CountByQuery returns the number of documents selected by a mutation query
+// without returning or changing those documents.
 func (i *Indexer) CountByQuery(text string, userID *uint) (int, error) {
 	q, err := documentMutationQuery(text, userID)
 	if err != nil {

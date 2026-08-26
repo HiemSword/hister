@@ -593,10 +593,7 @@ func doSearch(idx *indexer.Indexer, query *indexer.Query, rules *config.Rules, u
 	}
 	res, err := idx.Search(query)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to get indexer results")
-	}
-	if res == nil {
-		res = &indexer.Results{}
+		return nil, err
 	}
 	if includeHistory {
 		hr, err := model.GetURLsByQuery(userID, oq)
@@ -1718,25 +1715,17 @@ func serveDelete(c *webContext) {
 	if c.Config.App.UserHandling && !c.IsAdmin {
 		userID = &c.UserID
 	}
+	var count int
+	var err error
 	if req.DryRun {
-		count, err := c.Indexer.CountByQuery(req.Query, userID)
-		if err != nil {
-			if errors.Is(err, indexer.ErrEmptyFilter) || errors.Is(err, querybuilder.ErrInvalidRegexp) {
-				http.Error(c.Response, err.Error(), http.StatusBadRequest)
-				return
+		count, err = c.Indexer.CountByQuery(req.Query, userID)
+	} else {
+		count, err = c.Indexer.DeleteByQuery(req.Query, userID, func(url string, uid uint) {
+			if err := model.DeleteHistoryURL(uid, url); err != nil {
+				log.Warn().Err(err).Str("url", url).Msg("failed to delete history for deleted document")
 			}
-			log.Error().Err(err).Msg("delete dry run failed")
-			serve500(c)
-			return
-		}
-		c.JSON(map[string]any{"matched": count})
-		return
+		})
 	}
-	count, err := c.Indexer.DeleteByQuery(req.Query, userID, func(url string, uid uint) {
-		if err := model.DeleteHistoryURL(uid, url); err != nil {
-			log.Warn().Err(err).Str("url", url).Msg("failed to delete history for deleted document")
-		}
-	})
 	if err != nil {
 		if errors.Is(err, indexer.ErrEmptyFilter) || errors.Is(err, querybuilder.ErrInvalidRegexp) {
 			http.Error(c.Response, err.Error(), http.StatusBadRequest)
@@ -1744,6 +1733,10 @@ func serveDelete(c *webContext) {
 		}
 		log.Error().Err(err).Msg("delete failed")
 		serve500(c)
+		return
+	}
+	if req.DryRun {
+		c.JSON(map[string]any{"matched": count})
 		return
 	}
 	c.JSON(map[string]any{"deleted": count})
