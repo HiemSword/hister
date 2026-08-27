@@ -147,7 +147,7 @@ func TestExtractsConversationAsOneRichDocument(t *testing.T) {
 	}
 }
 
-func TestExtractFallsBackWithoutVisibleUserOrAssistantTurns(t *testing.T) {
+func TestExtractAbortsWithoutVisibleUserOrAssistantTurns(t *testing.T) {
 	doc := &document.Document{
 		URL: "https://chatgpt.com/c/empty-123",
 		HTML: `<html><head><title>Empty ChatGPT shell</title></head><body>
@@ -158,14 +158,17 @@ func TestExtractFallsBackWithoutVisibleUserOrAssistantTurns(t *testing.T) {
 	}
 
 	decision, err := (&ChatGPTExtractor{}).Extract(doc).Unpack()
-	if decision != sdk.ExtractorFallback {
-		t.Fatalf("Extract decision = %v, want %v", decision, sdk.ExtractorFallback)
+	if decision != sdk.ExtractorAbort {
+		t.Fatalf("Extract decision = %v, want %v", decision, sdk.ExtractorAbort)
 	}
 	if err == nil {
-		t.Fatal("Extract returned no fallback diagnostic")
+		t.Fatal("Extract returned no abort diagnostic")
+	}
+	if got, want := err.Error(), "no visible user or assistant turns found"; got != want {
+		t.Fatalf("Extract diagnostic = %q, want %q", got, want)
 	}
 	if doc.Text != "" {
-		t.Fatalf("fallback populated text: %q", doc.Text)
+		t.Fatalf("abort populated text: %q", doc.Text)
 	}
 
 	preview, previewDecision, previewErr := (&ChatGPTExtractor{}).Preview(doc).Unpack()

@@ -112,7 +112,7 @@ func (e *ChatGPTExtractor) Extract(d *sdk.Document) sdk.ExtractResult {
 		return sdk.ExtractFallback(err)
 	}
 	if len(turns) == 0 {
-		return sdk.ExtractFallback(fmt.Errorf("no visible user or assistant turns found"))
+		return sdk.AbortExtraction(fmt.Errorf("no visible user or assistant turns found"))
 	}
 
 	title := documentTitle(d, doc)
