@@ -185,6 +185,8 @@ type SemanticSearch struct {
 	MaxEmbeddingConcurrency int               `yaml:"max_embedding_concurrency" mapstructure:"max_embedding_concurrency"`
 }
 
+const postgresHNSWMaxDimensions = 2000
+
 // DBTypedef represents the type of database being used.
 type DBTypedef int
 
@@ -554,7 +556,7 @@ func CreateDefaultConfig() *Config {
 			EmbeddingTimeout:        300,
 			APIKey:                  "",
 			Headers:                 map[string]string{},
-			Dimensions:              4096,
+			Dimensions:              postgresHNSWMaxDimensions,
 			MaxContextLength:        512,
 			ChunkOverlap:            64,
 			MaxEmbeddingBatchSize:   8,
@@ -648,7 +650,7 @@ func (c *Config) init() error {
 	if err := c.Hotkeys.Validate(); err != nil {
 		return err
 	}
-	if err := c.SemanticSearch.Validate(); err != nil {
+	if err := c.validateSemanticSearch(); err != nil {
 		return err
 	}
 	if err := c.validateOAuth(); err != nil {
@@ -1134,6 +1136,24 @@ func (s SemanticSearch) Validate() error {
 	}
 	if s.MaxContextLength <= 0 {
 		return fmt.Errorf("semantic_search.max_context_length must be a positive integer, got %d", s.MaxContextLength)
+	}
+	return nil
+}
+
+func (c *Config) validateSemanticSearch() error {
+	if err := c.SemanticSearch.Validate(); err != nil {
+		return err
+	}
+	if !c.SemanticSearch.Enable {
+		return nil
+	}
+	dbType, _ := c.DatabaseConnection()
+	if dbType == Psql && c.SemanticSearch.Dimensions > postgresHNSWMaxDimensions {
+		return fmt.Errorf(
+			"semantic_search.dimensions must not exceed %d when using PostgreSQL, got %d",
+			postgresHNSWMaxDimensions,
+			c.SemanticSearch.Dimensions,
+		)
 	}
 	return nil
 }

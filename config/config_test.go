@@ -138,6 +138,64 @@ func TestSemanticSearchRequestDefaults(t *testing.T) {
 	if got, want := cfg.SemanticSearch.MaxEmbeddingConcurrency, 2; got != want {
 		t.Errorf("semantic_search.max_embedding_concurrency = %d, want %d", got, want)
 	}
+	if got, want := cfg.SemanticSearch.Dimensions, 2000; got != want {
+		t.Errorf("semantic_search.dimensions = %d, want %d", got, want)
+	}
+}
+
+func TestSemanticSearchPostgresDimensions(t *testing.T) {
+	tests := []struct {
+		name       string
+		database   string
+		enable     bool
+		dimensions int
+		wantError  string
+	}{
+		{
+			name:       "PostgreSQL maximum",
+			database:   "host=localhost dbname=hister",
+			enable:     true,
+			dimensions: 2000,
+		},
+		{
+			name:       "PostgreSQL above maximum",
+			database:   "host=localhost dbname=hister",
+			enable:     true,
+			dimensions: 2001,
+			wantError:  "semantic_search.dimensions must not exceed 2000 when using PostgreSQL, got 2001",
+		},
+		{
+			name:       "SQLite above PostgreSQL maximum",
+			database:   "db.sqlite3",
+			enable:     true,
+			dimensions: 4096,
+		},
+		{
+			name:       "disabled PostgreSQL semantic search",
+			database:   "host=localhost dbname=hister",
+			dimensions: 4096,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := CreateDefaultConfig()
+			cfg.Server.Database = test.database
+			cfg.SemanticSearch.Enable = test.enable
+			cfg.SemanticSearch.Dimensions = test.dimensions
+
+			err := cfg.validateSemanticSearch()
+			if test.wantError == "" {
+				if err != nil {
+					t.Fatalf("validateSemanticSearch() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != test.wantError {
+				t.Fatalf("validateSemanticSearch() error = %v, want %q", err, test.wantError)
+			}
+		})
+	}
 }
 
 func TestCrawlerProxyConfigAndEnvironment(t *testing.T) {

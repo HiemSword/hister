@@ -464,8 +464,8 @@ description: 'Explore every configuration section, option, default value, enviro
     {
       name: 'dimensions',
       type: 'int',
-      defaultValue: '4096',
-      description: 'Vector dimensionality. This must match the output of the selected embedding model.',
+      defaultValue: '2000',
+      description: 'Requested vector dimensionality. The selected embedding model and endpoint must support this output size. Hister limits PostgreSQL vector storage to 2000 dimensions.',
     },
   ];
 
@@ -670,7 +670,7 @@ Semantic search is **opt-in** and disabled by default. It requires an OpenAI-com
 The vector store backend is chosen automatically based on `server.database`:
 
 - **SQLite** (default) stores vectors in a separate `vectors.sqlite3` file in the same directory as the main database, using the [sqlite-vec](https://github.com/asg017/sqlite-vec) extension. No extra setup required.
-- **PostgreSQL** stores vectors in the same database as the main data using the [pgvector](https://github.com/pgvector/pgvector) extension. Make sure `pgvector` is installed and enabled (`CREATE EXTENSION vector;`) before starting Hister.
+- **PostgreSQL** stores vectors in the same database as the main data using the [pgvector](https://github.com/pgvector/pgvector) extension. Hister uses an HNSW index with the `vector` type, which supports at most 2000 dimensions. Make sure `pgvector` is installed and enabled (`CREATE EXTENSION vector;`) before starting Hister.
 
 ### Example
 

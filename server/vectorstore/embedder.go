@@ -111,8 +111,9 @@ func NewEmbedder(cfg *config.SemanticSearch) *Embedder {
 }
 
 type embeddingRequest struct {
-	Model string `json:"model"`
-	Input any    `json:"input"` // string for single, []string for batch
+	Model      string `json:"model"`
+	Input      any    `json:"input"` // string for single, []string for batch
+	Dimensions int    `json:"dimensions,omitempty"`
 }
 
 type embeddingResponse struct {
@@ -203,8 +204,9 @@ func shouldRetryEmbeddingError(ctx context.Context, err error) bool {
 // the parsed response. input is either a string (single) or []string (batch).
 func (e *Embedder) doEmbeddingRequestOnce(ctx context.Context, input any) (_ *embeddingResponse, err error) {
 	body, err := json.Marshal(embeddingRequest{
-		Model: e.model,
-		Input: input,
+		Model:      e.model,
+		Input:      input,
+		Dimensions: e.dimensions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal embedding request: %w", err)

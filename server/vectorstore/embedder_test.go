@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +16,12 @@ import (
 
 	"github.com/asciimoo/hister/config"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func newTestEmbedder(endpoint string) *Embedder {
 	return NewEmbedder(&config.SemanticSearch{
@@ -77,6 +84,29 @@ func TestNewEmbedderAppliesContextHeadroom(t *testing.T) {
 	embedder := NewEmbedder(&config.SemanticSearch{MaxContextLength: 32000})
 	if got, want := embedder.maxContextLength, 30400; got != want {
 		t.Errorf("max context length = %d, want %d", got, want)
+	}
+}
+
+func TestEmbedRequestIncludesConfiguredDimensions(t *testing.T) {
+	var request embeddingRequest
+	embedder := newTestEmbedder("http://example.com/v1/embeddings")
+	embedder.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(req.Body).Decode(&request); err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"embedding":[1,2,3]}]}`)),
+			Request:    req,
+		}, nil
+	})
+
+	if _, err := embedder.Embed(context.Background(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := request.Dimensions, 3; got != want {
+		t.Errorf("request dimensions = %d, want %d", got, want)
 	}
 }
 
