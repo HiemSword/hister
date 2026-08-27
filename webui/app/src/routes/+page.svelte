@@ -84,6 +84,7 @@
     Download,
     ExternalLink,
     History,
+    FileText,
     Shield,
     Link2,
     Keyboard,
@@ -243,10 +244,12 @@
   let rulesCount = $state(0);
   let aliasesCount = $state(0);
   let historyCount = $state(0);
+  let fileCount = $state(0);
   let statsLoaded = $state(false);
   let statsAvailable = $state(false);
 
   let displayHistoryCount = $state(0);
+  let displayFileCount = $state(0);
   let displayRulesCount = $state(0);
   let displayAliasesCount = $state(0);
 
@@ -1363,6 +1366,7 @@
         rulesCount = stats.rule_count ?? 0;
         aliasesCount = stats.alias_count ?? 0;
         historyCount = stats.doc_count ?? 0;
+        fileCount = stats.file_count ?? 0;
         statsAvailable = true;
         recentSearches = [];
         if (stats.recent_searches) {
@@ -1427,16 +1431,23 @@
   }
 
   function animateCounters() {
-    const counterObj = { h: displayHistoryCount, r: displayRulesCount, a: displayAliasesCount };
+    const counterObj = {
+      h: displayHistoryCount,
+      f: displayFileCount,
+      r: displayRulesCount,
+      a: displayAliasesCount,
+    };
     animationHandles.push(
       animate(counterObj, {
         h: historyCount,
+        f: fileCount,
         r: rulesCount,
         a: aliasesCount,
         duration: 800,
         ease: 'outCubic',
         onRender: () => {
           displayHistoryCount = Math.round(counterObj.h);
+          displayFileCount = Math.round(counterObj.f);
           displayRulesCount = Math.round(counterObj.r);
           displayAliasesCount = Math.round(counterObj.a);
         },
@@ -2889,6 +2900,21 @@
           <span class="font-outfit text-xl font-extrabold">{displayHistoryCount}</span>
           <span class="font-inter text-text-brand-secondary text-sm">pages</span>
         </a>
+        {#if fileCount > 0}
+          <a
+            href="{base}/?q=type:file"
+            class="home-stat-pill home-stat-link text-hister-amber"
+            aria-label="Browse all indexed files"
+            onclick={(event) => {
+              event.preventDefault();
+              clickChip('type:file');
+            }}
+          >
+            <FileText class="size-3.5 md:size-4" />
+            <span class="font-outfit text-xl font-extrabold">{displayFileCount}</span>
+            <span class="font-inter text-text-brand-secondary text-sm">files</span>
+          </a>
+        {/if}
         {#if !config.public || config.canWrite}
           <a
             href="{base}/rules#indexing-rules"

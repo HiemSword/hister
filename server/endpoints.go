@@ -1540,15 +1540,18 @@ func serveStats(c *webContext) {
 	if historyEnabled(c) {
 		hs, _ = model.GetLatestHistoryItems(c.UserID, 5, 0)
 	}
-	var docCount uint64
+	var docCount, fileCount uint64
 	if c.Config.App.UserHandling {
 		docCount = c.Indexer.TotalByUser(c.UserID)
+		fileCount = c.Indexer.TotalFilesByUser(c.UserID)
 	} else {
 		docCount = c.Indexer.Total()
+		fileCount = c.Indexer.TotalFiles()
 	}
 	rules := c.effectiveRules()
 	resp := map[string]any{
 		"doc_count":       docCount,
+		"file_count":      fileCount,
 		"rule_count":      rules.Count(),
 		"alias_count":     len(rules.Aliases),
 		"recent_searches": hs,

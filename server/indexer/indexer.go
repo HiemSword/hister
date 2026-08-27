@@ -994,8 +994,7 @@ func (i *Indexer) validateFileDocument(d *document.Document) error {
 	return nil
 }
 
-func (i *Indexer) Total() uint64 {
-	q := query.NewMatchAllQuery()
+func (i *Indexer) total(q query.Query) uint64 {
 	req := bleve.NewSearchRequest(q)
 	req.Size = 1
 	res, err := i.searchIndexes(req)
@@ -1005,17 +1004,34 @@ func (i *Indexer) Total() uint64 {
 	return res.Total
 }
 
+func (i *Indexer) Total() uint64 {
+	return i.total(query.NewMatchAllQuery())
+}
+
 func (i *Indexer) TotalByUser(userID uint) uint64 {
 	uid := float64(userID)
 	q := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
 	q.SetField("user_id")
-	req := bleve.NewSearchRequest(q)
-	req.Size = 1
-	res, err := i.searchIndexes(req)
-	if err != nil {
-		return 0
-	}
-	return res.Total
+	return i.total(q)
+}
+
+func (i *Indexer) TotalFiles() uint64 {
+	return i.total(fileTypeQuery())
+}
+
+func (i *Indexer) TotalFilesByUser(userID uint) uint64 {
+	uid := float64(userID)
+	userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
+	userQuery.SetField("user_id")
+	return i.total(bleve.NewConjunctionQuery(fileTypeQuery(), userQuery))
+}
+
+func fileTypeQuery() query.Query {
+	minType := float64(document.Local)
+	maxType := float64(document.RemoteFile) + 1
+	q := bleve.NewNumericRangeQuery(&minType, &maxType)
+	q.SetField("type")
+	return q
 }
 
 func (i *Indexer) AddDocument(d *document.Document) error {

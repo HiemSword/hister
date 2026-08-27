@@ -830,7 +830,7 @@ func init() {
 			CSRFRequired: false,
 			Public:       true,
 			Handler:      serveStats,
-			Description:  "Return index statistics (document count, rule count, recent searches)",
+			Description:  "Return index statistics (document count, file count, rule count, recent searches)",
 		},
 		{
 			Name:         "Favicon",

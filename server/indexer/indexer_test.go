@@ -430,6 +430,35 @@ func TestSearchFileTypeIncludesLocalAndRemoteFiles(t *testing.T) {
 	}
 }
 
+func TestTotalFilesIncludesLocalAndRemoteFilesAndScopesUsers(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+
+	docs := []*document.Document{
+		{URL: "https://example.com/page", Type: document.Web, UserID: 1, Processed: true},
+		{URL: "file:///tmp/local.txt", Type: document.Local, UserID: 1, Processed: true},
+		{URL: "remote-file://laptop/tmp/README.md", Type: document.RemoteFile, UserID: 2, Processed: true},
+	}
+	for _, doc := range docs {
+		if err := idx.AddDocument(doc); err != nil {
+			t.Fatalf("AddDocument failed: %v", err)
+		}
+	}
+
+	if got := idx.TotalFiles(); got != 2 {
+		t.Fatalf("file count = %d, want 2", got)
+	}
+	if got := idx.TotalFilesByUser(1); got != 1 {
+		t.Fatalf("user 1 file count = %d, want 1", got)
+	}
+	if got := idx.TotalFilesByUser(2); got != 1 {
+		t.Fatalf("user 2 file count = %d, want 1", got)
+	}
+	if got := idx.TotalFilesByUser(3); got != 0 {
+		t.Fatalf("user 3 file count = %d, want 0", got)
+	}
+}
+
 func TestSearchFiltersByVisitCount(t *testing.T) {
 	idxCfg := testutil.Config(t)
 	idx := newTestIndexer(t, idxCfg)
