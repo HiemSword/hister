@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, tick, untrack, type Component } from 'svelte';
   import {
     buildPreviewUrl,
     pushPreviewHistory,
@@ -1842,6 +1842,31 @@
   {/if}
 {/snippet}
 
+{#snippet homeStatChip(
+  href: string,
+  colorClass: string,
+  ariaLabel: string,
+  Icon: Component<{ class?: string }>,
+  count: number,
+  label: string,
+  searchQuery: string | null,
+)}
+  <a
+    {href}
+    class="home-stat-pill home-stat-link {colorClass}"
+    aria-label={ariaLabel}
+    onclick={(event) => {
+      if (searchQuery === null) return;
+      event.preventDefault();
+      clickChip(searchQuery);
+    }}
+  >
+    <Icon class="size-3.5 md:size-4" />
+    <span class="font-outfit text-xl font-extrabold">{count}</span>
+    <span class="font-inter text-text-brand-secondary text-sm">{label}</span>
+  </a>
+{/snippet}
+
 {#if isSearching}
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="relative z-40 shrink-0">
@@ -2887,53 +2912,45 @@
           </div>
         {/each}
       {:else if statsAvailable}
-        <a
-          href="{base}/?q=*"
-          class="home-stat-pill home-stat-link text-hister-indigo"
-          aria-label="Browse all indexed pages"
-          onclick={(event) => {
-            event.preventDefault();
-            clickChip('*');
-          }}
-        >
-          <History class="size-3.5 md:size-4" />
-          <span class="font-outfit text-xl font-extrabold">{displayHistoryCount}</span>
-          <span class="font-inter text-text-brand-secondary text-sm">pages</span>
-        </a>
+        {@render homeStatChip(
+          `${base}/?q=*`,
+          'text-hister-indigo',
+          'Browse all indexed pages',
+          History,
+          displayHistoryCount,
+          'pages',
+          '*',
+        )}
         {#if fileCount > 0}
-          <a
-            href="{base}/?q=type:file"
-            class="home-stat-pill home-stat-link text-hister-amber"
-            aria-label="Browse all indexed files"
-            onclick={(event) => {
-              event.preventDefault();
-              clickChip('type:file');
-            }}
-          >
-            <FileText class="size-3.5 md:size-4" />
-            <span class="font-outfit text-xl font-extrabold">{displayFileCount}</span>
-            <span class="font-inter text-text-brand-secondary text-sm">files</span>
-          </a>
+          {@render homeStatChip(
+            `${base}/?q=type:file`,
+            'text-hister-amber',
+            'Browse all indexed files',
+            FileText,
+            displayFileCount,
+            'files',
+            'type:file',
+          )}
         {/if}
         {#if !config.public || config.canWrite}
-          <a
-            href="{base}/rules#indexing-rules"
-            class="home-stat-pill home-stat-link text-hister-teal"
-            aria-label="Open indexing rules"
-          >
-            <Shield class="size-3.5 md:size-4" />
-            <span class="font-outfit text-xl font-extrabold">{displayRulesCount}</span>
-            <span class="font-inter text-text-brand-secondary text-sm">rules</span>
-          </a>
-          <a
-            href="{base}/rules#search-aliases"
-            class="home-stat-pill home-stat-link text-hister-coral"
-            aria-label="Open search aliases"
-          >
-            <Link2 class="size-3.5 md:size-4" />
-            <span class="font-outfit text-xl font-extrabold">{displayAliasesCount}</span>
-            <span class="font-inter text-text-brand-secondary text-sm">aliases</span>
-          </a>
+          {@render homeStatChip(
+            `${base}/rules#indexing-rules`,
+            'text-hister-teal',
+            'Open indexing rules',
+            Shield,
+            displayRulesCount,
+            'rules',
+            null,
+          )}
+          {@render homeStatChip(
+            `${base}/rules#search-aliases`,
+            'text-hister-coral',
+            'Open search aliases',
+            Link2,
+            displayAliasesCount,
+            'aliases',
+            null,
+          )}
         {/if}
       {:else}
         <p class="font-inter text-text-brand-muted text-sm" role="status">Statistics unavailable</p>
