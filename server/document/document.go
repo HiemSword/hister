@@ -48,6 +48,7 @@ type Document struct {
 	SkipSensitiveCheck bool `json:"skip_sensitive_check"`
 	Processed          bool `json:"processed"`
 	faviconURL         string
+	trustedLocalFile   bool
 }
 
 var (
@@ -165,7 +166,7 @@ func (d *Document) ProcessWithSensitivePatternContext(ctx context.Context, ld La
 	if d.Type == RemoteFile {
 		return d.processRemoteFile(pu, ld, sensitivePattern)
 	}
-	if pu.Scheme == "file" && d.HTML == "" {
+	if pu.Scheme == "file" && (d.HTML == "" || d.trustedLocalFile) {
 		return d.processFile(ld, sensitivePattern)
 	}
 	if pu.Scheme != "file" && (pu.Scheme == "" || pu.Host == "") {
@@ -314,6 +315,11 @@ func (d *Document) CopyFaviconFrom(source *Document) {
 
 func (d *Document) ID() string {
 	return GetDocID(d.UserID, d.URL)
+}
+
+// SetTrustedLocalFile marks content read from the server filesystem.
+func (d *Document) SetTrustedLocalFile() {
+	d.trustedLocalFile = true
 }
 
 func (d *Document) AddMetadata(k string, v any) {

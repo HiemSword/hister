@@ -370,7 +370,7 @@ func (i *Indexer) IndexFile(path string, userID uint) error {
 
 	// Skip if already indexed with the same modification time
 	existing := i.GetByURLAndUser(fileURL, userID)
-	if existing != nil && existing.Updated == info.ModTime().Unix() {
+	if existing != nil && existing.Updated == info.ModTime().Unix() && existing.Type == document.Local {
 		if label == "" || existing.Label == label {
 			return nil
 		}
@@ -391,6 +391,7 @@ func (i *Indexer) IndexFile(path string, userID uint) error {
 		UserID:  userID,
 		Label:   label,
 	}
+	doc.SetTrustedLocalFile()
 
 	return i.indexFileContent(path, doc, content)
 }
