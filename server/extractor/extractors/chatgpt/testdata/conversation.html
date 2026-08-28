@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Project planning | ChatGPT</title>
+    <style>.hidden { display: none }</style>
+  </head>
+  <body>
+    <main>
+      <article data-testid="conversation-turn-0">
+        <div data-message-author-role="user">
+          <div class="whitespace-pre-wrap">Please draft a project plan.</div>
+          <button type="button">Copy</button>
+        </div>
+      </article>
+      <article data-testid="conversation-turn-1">
+        <div data-message-author-role="assistant">
+          <div class="markdown">
+            <h2>Project plan</h2>
+            <p>Read the <a href="/docs/start">guide</a>.</p>
+            <ul>
+              <li>Design</li>
+              <li>Build</li>
+            </ul>
+            <table>
+              <thead><tr><th>Phase</th><th>Owner</th></tr></thead>
+              <tbody><tr><td>Draft</td><td>Ada</td></tr></tbody>
+            </table>
+            <pre><code>go test ./server/...</code></pre>
+            <p><a href="javascript:alert(1)" onclick="alert(2)">Unsafe link</a></p>
+            <img src="https://cdn.example.invalid/generated.png" alt="generated image">
+            <iframe src="https://embed.example.invalid/ignored"></iframe>
+            <script>alert("ignored")</script>
+          </div>
+        </div>
+      </article>
+      <article data-testid="conversation-turn-2">
+        <div data-message-author-role="system">System-only content must not be indexed.</div>
+      </article>
+      <article data-testid="conversation-turn-3">
+        <div data-message-author-role="assistant">
+          <div data-message-author-role="assistant"><p>Nested answer.</p></div>
+        </div>
+      </article>
+      <article data-testid="conversation-turn-4">
+        <div data-message-author-role="tool">Tool-only content must not be indexed.</div>
+      </article>
+    </main>
+  </body>
+</html>

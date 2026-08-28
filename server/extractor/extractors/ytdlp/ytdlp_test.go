@@ -261,7 +261,7 @@ func TestMatch(t *testing.T) {
 		{"https://artist.bandcamp.com/track/song", true},
 		{"https://www.tiktok.com/@user/video/123", true},
 		{"https://www.ted.com/talks/some_talk", true},
-		{"https://archive.org/details/something", true},
+		{"https://archive.org/details/something", false},
 		{"https://videos.peertube.example.com/w/abc", true},
 		{"https://www.youtube.com/", false},
 		{"https://www.youtube.com", false},

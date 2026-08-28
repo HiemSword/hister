@@ -368,6 +368,19 @@ extractors:
         - vimeo.com
 ```
 
+### `chatgpt`
+
+Extracts a ChatGPT conversation as one document. Each
+visible user and assistant turn is retained in order and labelled in both the
+indexed text and the preview. Headings, lists, tables, code blocks, and ordinary
+safe links are preserved in the sanitized preview. System, tool, internal, and
+unsupported media content is ignored.
+
+**Matches:** `https://chatgpt.com/c/<conversation-id>` authenticated,
+`https://chatgpt.com/share/<conversation-id>` public shared, and
+`https://chatgpt.com/g/<gpt-id>/c/<conversation-id>` custom GPT conversation URLs
+(including `www.chatgpt.com`).
+
 ### `readability`
 
 Generic article extractor using the

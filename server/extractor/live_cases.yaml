@@ -287,6 +287,25 @@ cases:
         - Share to web
       min_preview_length: 500
 
+  - name: chatgpt_public_share_chromedp
+    url: https://chatgpt.com/share/6a6a1580-8e2c-83e8-ad79-4017715b7f6f
+    backend: chromedp
+    backend_options:
+      capture_delay: 3
+    extractor: ChatGPT
+    timeout: 35
+    expect:
+      title_contains:
+        - Sleep Optimization Discussion
+      text_contains:
+        - "User:"
+        - "Assistant:"
+      min_text_length: 100
+      preview_contains:
+        - User
+        - Assistant
+      min_preview_length: 100
+
   - name: ytdlp_archive_big_buck_bunny
     url: https://archive.org/details/BigBuckBunny_328
     fetch: false
