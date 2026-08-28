@@ -193,6 +193,25 @@ cases:
         type: Issue
         repo: asciimoo/hister
 
+  - name: hackernews_item_archive_http
+    url: https://web.archive.org/web/20260821112419/https://news.ycombinator.com/item?id=8863
+    document_url: https://news.ycombinator.com/item?id=8863
+    backend: http
+    extractor: HackerNews
+    timeout: 20
+    run_chain: false
+    expect:
+      title_contains:
+        - Dropbox - Throw away your USB drive
+      text_contains:
+        - 104 points
+        - by dhouston
+        - curlftpfs
+      min_text_length: 1000
+      preview_contains:
+        - Comments
+        - dhouston
+      min_preview_length: 1000
   - name: lobsters_story_archive_http
     url: https://web.archive.org/web/20260210164115/https://lobste.rs/s/ogr30w/how_i_cut_my_google_search_dependence_half
     document_url: https://lobste.rs/s/ogr30w/how_i_cut_my_google_search_dependence_half

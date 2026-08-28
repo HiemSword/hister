@@ -16,6 +16,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/asciimoo/hister/server/extractor/sdk"
+	"github.com/asciimoo/hister/server/extractor/textutil"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
 )
@@ -389,21 +390,21 @@ func parsePreloadedTags(raw json.RawMessage) []string {
 
 func readTopicHeader(topic *discourseTopic, doc *goquery.Document) {
 	topic.Title = firstNonempty(
-		selectionText(doc.Find(`#topic-title h1 a`).First()),
-		selectionText(doc.Find(`h1[data-topic-id]`).First()),
+		textutil.SelectionText(doc.Find(`#topic-title h1 a`).First()),
+		textutil.SelectionText(doc.Find(`h1[data-topic-id]`).First()),
 		metaContent(doc, `meta[property="og:title"]`, `meta[name="twitter:title"]`),
 		topic.Title,
 	)
 	if topic.Category == "" {
 		topic.Category = firstNonempty(
-			selectionText(doc.Find(`#topic-title .badge-category__name`).First()),
-			selectionText(doc.Find(`#topic-title .category-name`).First()),
+			textutil.SelectionText(doc.Find(`#topic-title .badge-category__name`).First()),
+			textutil.SelectionText(doc.Find(`#topic-title .category-name`).First()),
 			metaContent(doc, `meta[property="og:article:section"]`),
 		)
 	}
 	if len(topic.Tags) == 0 {
 		doc.Find(`#topic-title .discourse-tag`).Each(func(_ int, tag *goquery.Selection) {
-			if value := selectionText(tag); value != "" {
+			if value := textutil.SelectionText(tag); value != "" {
 				topic.Tags = append(topic.Tags, value)
 			}
 		})
@@ -426,7 +427,7 @@ func parseRenderedPosts(doc *goquery.Document, base *url.URL) []discoursePost {
 		body.Find(`script, style, button, .cooked-selection-barrier, .post-menu-area`).Remove()
 		urlutil.RewriteURLs(body, base)
 		bodyHTML, _ := body.Html()
-		bodyText := selectionText(body)
+		bodyText := textutil.SelectionText(body)
 		if bodyText == "" {
 			return
 		}
@@ -849,7 +850,7 @@ func extractContentHTML(rawHTML string, base *url.URL) (string, string) {
 	body.Find("script, style, button, .cooked-selection-barrier, .post-menu-area").Remove()
 	urlutil.RewriteURLs(body, base)
 	content, _ := body.Html()
-	return selectionText(body), content
+	return textutil.SelectionText(body), content
 }
 
 func cleanStrings(values []string) []string {
@@ -896,7 +897,7 @@ func metaContent(doc *goquery.Document, selectors ...string) string {
 
 func firstSelectionText(root *goquery.Selection, selectors ...string) string {
 	for _, selector := range selectors {
-		if value := selectionText(root.Find(selector).First()); value != "" {
+		if value := textutil.SelectionText(root.Find(selector).First()); value != "" {
 			return value
 		}
 	}
@@ -914,7 +915,7 @@ func firstSelectionAttr(root *goquery.Selection, attr string, selectors ...strin
 
 func firstSelectionInt(root *goquery.Selection, selectors ...string) int {
 	for _, selector := range selectors {
-		value := selectionText(root.Find(selector).First())
+		value := textutil.SelectionText(root.Find(selector).First())
 		for field := range strings.FieldsSeq(value) {
 			if number := parseInt(strings.Trim(field, "()[]{}.,")); number > 0 {
 				return number
@@ -932,81 +933,4 @@ func parseInt(value string) int {
 func parseInt64(value string) int64 {
 	number, _ := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
 	return number
-}
-
-var textBlockElements = map[string]bool{
-	"address": true, "article": true, "blockquote": true, "dd": true, "div": true,
-	"dl": true, "dt": true, "figcaption": true, "figure": true, "footer": true,
-	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
-	"header": true, "li": true, "main": true, "ol": true, "p": true, "pre": true,
-	"section": true, "table": true, "td": true, "th": true, "tr": true, "ul": true,
-}
-
-func selectionText(selection *goquery.Selection) string {
-	if selection == nil || selection.Length() == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, node := range selection.Nodes {
-		writeNodeText(&b, node)
-	}
-	return normalizeText(b.String())
-}
-
-func writeNodeText(b *strings.Builder, node *html.Node) {
-	if node.Type == html.TextNode {
-		b.WriteString(node.Data)
-		return
-	}
-	if node.Type == html.ElementNode {
-		name := strings.ToLower(node.Data)
-		if name == "script" || name == "style" || name == "svg" || name == "button" {
-			return
-		}
-		if name == "br" {
-			writeTextBreak(b)
-			return
-		}
-		if textBlockElements[name] {
-			writeTextBreak(b)
-		}
-		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			writeNodeText(b, child)
-		}
-		if textBlockElements[name] {
-			writeTextBreak(b)
-		}
-		return
-	}
-	for child := node.FirstChild; child != nil; child = child.NextSibling {
-		writeNodeText(b, child)
-	}
-}
-
-func writeTextBreak(b *strings.Builder) {
-	if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n") {
-		b.WriteByte('\n')
-	}
-}
-
-func normalizeText(text string) string {
-	text = strings.ReplaceAll(text, "\u00a0", " ")
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	lines := strings.Split(text, "\n")
-	cleaned := make([]string, 0, len(lines))
-	blank := false
-	for _, line := range lines {
-		line = strings.Join(strings.Fields(line), " ")
-		if line == "" {
-			if len(cleaned) > 0 && !blank {
-				cleaned = append(cleaned, "")
-				blank = true
-			}
-			continue
-		}
-		cleaned = append(cleaned, line)
-		blank = false
-	}
-	return strings.TrimSpace(strings.Join(cleaned, "\n"))
 }

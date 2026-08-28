@@ -247,6 +247,17 @@ parent–child comment hierarchy.
 
 **Matches:** `https://lobste.rs/s/…`
 
+### `hackernews`
+
+Extracts the full content of a Hacker News item page, including the submission
+metadata (title, target site, score, author, submission date), the optional self
+text of an Ask HN or text post, and the complete comment tree. Hacker News
+renders comments as one flat table and records depth in the `indent` attribute
+of each row, so both the indexed text and the preview rebuild the parent–child
+hierarchy from it.
+
+**Matches:** `https://news.ycombinator.com/item?id=…`
+
 ### `wikipedia`
 
 Extracts article content from Wikipedia. Indexed text includes the article

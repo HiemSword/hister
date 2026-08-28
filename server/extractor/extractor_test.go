@@ -221,6 +221,7 @@ func TestDefaultRegistryOrder(t *testing.T) {
 		"GoDoc",
 		"GitHub",
 		"Lobsters",
+		"HackerNews",
 		"Wikipedia",
 		"Mastodon",
 		"Bluesky",
