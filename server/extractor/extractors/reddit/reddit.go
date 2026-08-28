@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"golang.org/x/net/html"
 
 	"github.com/asciimoo/hister/server/extractor/sdk"
+	"github.com/asciimoo/hister/server/extractor/textutil"
 	"github.com/asciimoo/hister/server/extractor/urlutil"
 	"github.com/asciimoo/hister/server/sanitizer"
 )
@@ -251,7 +251,7 @@ func parsePostElement(post *redditPost, root *goquery.Selection, doc *goquery.Do
 		firstAttr(root, "post-title", "data-title"),
 		firstSelectionText(root, `h1[slot="title"]`, `[data-testid="post-title"]`, `[itemprop="headline"]`, `p.title a.title`, "h1"),
 		firstPageMeta(doc, `meta[property="og:title"]`, `meta[name="twitter:title"]`),
-		selectionText(doc.Find("title").First()),
+		textutil.SelectionText(doc.Find("title").First()),
 	)
 	post.Author = firstValue(
 		firstAttr(root, "author", "data-author"),
@@ -277,7 +277,7 @@ func parsePostElement(post *redditPost, root *goquery.Selection, doc *goquery.Do
 
 	body := firstBodySelection(root)
 	if body != nil {
-		post.BodyText = selectionText(body)
+		post.BodyText = textutil.SelectionText(body)
 		urlutil.RewriteURLs(body, base)
 		post.BodyHTML, _ = body.Html()
 	}
@@ -311,7 +311,7 @@ func firstBodySelection(root *goquery.Selection) *goquery.Selection {
 	for _, selector := range selectors {
 		var found *goquery.Selection
 		root.Find(selector).EachWithBreak(func(_ int, s *goquery.Selection) bool {
-			if selectionText(s) == "" && s.Find("img, video, audio").Length() == 0 {
+			if textutil.SelectionText(s) == "" && s.Find("img, video, audio").Length() == 0 {
 				return true
 			}
 			found = s
@@ -454,7 +454,7 @@ func parseComment(root *goquery.Selection, rootSelector string, base *url.URL) (
 	}
 	body := commentBody(root)
 	if body != nil {
-		comment.Text = selectionText(body)
+		comment.Text = textutil.SelectionText(body)
 		urlutil.RewriteURLs(body, base)
 		comment.HTML, _ = body.Html()
 	} else {
@@ -493,7 +493,7 @@ func fallbackCommentText(root *goquery.Selection, rootSelector string) string {
 	clone := root.Clone()
 	clone.Find(rootSelector).Remove()
 	clone.Find("button, script, style, svg, shreddit-comment-action-row, [slot=actionRow], [slot=commentMeta], [slot=commentAvatar]").Remove()
-	return selectionText(clone)
+	return textutil.SelectionText(clone)
 }
 
 func commentID(root *goquery.Selection) string {
@@ -655,7 +655,7 @@ func firstSelectionText(s *goquery.Selection, selectors ...string) string {
 		return ""
 	}
 	for _, selector := range selectors {
-		if value := selectionText(s.Find(selector).First()); value != "" {
+		if value := textutil.SelectionText(s.Find(selector).First()); value != "" {
 			return value
 		}
 	}
@@ -685,83 +685,6 @@ func firstPageMeta(s selectionFinder, selectors ...string) string {
 		}
 	}
 	return ""
-}
-
-var textBlockElements = map[string]bool{
-	"address": true, "article": true, "blockquote": true, "dd": true, "div": true,
-	"dl": true, "dt": true, "figcaption": true, "figure": true, "footer": true,
-	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
-	"header": true, "li": true, "main": true, "ol": true, "p": true, "pre": true,
-	"section": true, "table": true, "td": true, "th": true, "tr": true, "ul": true,
-}
-
-func selectionText(s *goquery.Selection) string {
-	if s == nil || s.Length() == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, node := range s.Nodes {
-		writeNodeText(&b, node)
-	}
-	return normalizeText(b.String())
-}
-
-func writeNodeText(b *strings.Builder, node *html.Node) {
-	if node.Type == html.TextNode {
-		b.WriteString(node.Data)
-		return
-	}
-	if node.Type == html.ElementNode {
-		name := strings.ToLower(node.Data)
-		if name == "script" || name == "style" || name == "svg" || name == "button" {
-			return
-		}
-		if name == "br" {
-			writeTextBreak(b)
-			return
-		}
-		if textBlockElements[name] {
-			writeTextBreak(b)
-		}
-		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			writeNodeText(b, child)
-		}
-		if textBlockElements[name] {
-			writeTextBreak(b)
-		}
-		return
-	}
-	for child := node.FirstChild; child != nil; child = child.NextSibling {
-		writeNodeText(b, child)
-	}
-}
-
-func writeTextBreak(b *strings.Builder) {
-	if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n") {
-		b.WriteByte('\n')
-	}
-}
-
-func normalizeText(text string) string {
-	text = strings.ReplaceAll(text, "\u00a0", " ")
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	lines := strings.Split(text, "\n")
-	clean := make([]string, 0, len(lines))
-	blank := false
-	for _, line := range lines {
-		line = strings.Join(strings.Fields(line), " ")
-		if line == "" {
-			if len(clean) > 0 && !blank {
-				clean = append(clean, "")
-				blank = true
-			}
-			continue
-		}
-		clean = append(clean, line)
-		blank = false
-	}
-	return strings.TrimSpace(strings.Join(clean, "\n"))
 }
 
 func paragraphHTML(text string) string {
