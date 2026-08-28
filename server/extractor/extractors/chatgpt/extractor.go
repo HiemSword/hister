@@ -61,9 +61,7 @@ func (e *ChatGPTExtractor) Match(d *sdk.Document) bool {
 		return false
 	}
 	path = strings.TrimPrefix(path, "/")
-	if strings.HasSuffix(path, "/") {
-		path = strings.TrimSuffix(path, "/")
-	}
+	path, _ = strings.CutSuffix(path, "/")
 	parts := strings.Split(path, "/")
 	var idParts []string
 	switch {
