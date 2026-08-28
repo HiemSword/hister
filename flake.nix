@@ -43,7 +43,6 @@
         nixosModules.hister =
           { lib, pkgs, ... }:
           {
-            imports = [ ./nix/nixos.nix ];
             services.hister.package = (
               lib.mkDefault inputs.self.packages.${pkgs.stdenvNoCC.hostPlatform.system}.default
             );
