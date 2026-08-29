@@ -187,16 +187,9 @@ func importBrowser(browser string, cmd *cobra.Command, startDate *time.Time) {
 }
 
 func importHistoryFile(file_path string, cmd *cobra.Command, startDate *time.Time) {
-	var table string
-
-	if strings.HasSuffix(file_path, "places.sqlite") {
-		table = "moz_places"
-	} else if strings.HasSuffix(file_path, "History") {
-		table = "urls"
-	} else if strings.HasSuffix(file_path, "History.db") {
-		table = "History"
-	} else {
-		log.Fatal().Str("file", file_path).Msg("Couldn't auto detect table")
+	table, err := detectHistoryTable(file_path)
+	if err != nil {
+		log.Fatal().Err(err).Str("file", file_path).Msg("Couldn't auto detect table")
 	}
 
 	importDB([]DBToImport{
@@ -207,6 +200,64 @@ func importHistoryFile(file_path string, cmd *cobra.Command, startDate *time.Tim
 	},
 		cmd,
 		startDate)
+}
+
+// detectHistoryTable identifies a browser history database by the tables it contains.
+//
+// This used to guess from the filename, which cannot work: Safari and Ladybird both call their
+// database History.db, so a Safari history was read as Ladybird's and failed with "no such table:
+// History". Chrome's is called History with no extension, which the same check would have to
+// distinguish by the absence of a suffix.
+//
+// What a database IS cannot be settled by what it is called, and the answer is inside it. Safari is
+// checked first because it is the only one identified by a pair of tables, so a match is
+// unambiguous.
+func detectHistoryTable(path string) (_ string, err error) {
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?immutable=1&mode=ro", path))
+	if err != nil {
+		return "", fmt.Errorf("open database: %w", err)
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type = 'table'")
+	if err != nil {
+		return "", fmt.Errorf("read schema: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+
+	tables := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return "", err
+		}
+		// SQLite is case-insensitive about table names; the schema records whatever case created
+		// them, so compare in one case and return the name this code expects to query.
+		tables[strings.ToLower(name)] = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	switch {
+	case tables["history_items"] && tables["history_visits"]:
+		return "safari", nil
+	case tables["moz_places"]:
+		return "moz_places", nil
+	case tables["urls"]:
+		return "urls", nil
+	case tables["history"]:
+		return "History", nil
+	}
+	return "", errors.New("no recognised browser history table found")
 }
 
 func importDB(databases []DBToImport, cmd *cobra.Command, startDate *time.Time) {

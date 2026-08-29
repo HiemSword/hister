@@ -192,3 +192,66 @@ func writeSafariHistoryFile(t *testing.T, path string, visits map[string]int64) 
 		}
 	}
 }
+
+func TestDetectHistoryTableIdentifiesByContent(t *testing.T) {
+	// Safari and Ladybird both call their database History.db, so a name cannot separate them.
+	// This is the case ad3lre reported on #694: a path-only import of Safari's history was read
+	// as Ladybird's and failed with "no such table: History".
+	dir := t.TempDir()
+
+	safari := filepath.Join(dir, "safari", "History.db")
+	writeSafariHistoryFile(t, safari, map[string]int64{"https://example.com": 1})
+
+	ladybird := filepath.Join(dir, "ladybird", "History.db")
+	writeTables(t, ladybird, "CREATE TABLE History (url TEXT, last_visited_time INTEGER)")
+
+	chrome := filepath.Join(dir, "chrome", "History")
+	writeTables(t, chrome, "CREATE TABLE urls (url TEXT, visit_count INTEGER)")
+
+	firefox := filepath.Join(dir, "firefox", "places.sqlite")
+	writeTables(t, firefox, "CREATE TABLE moz_places (url TEXT, last_visit_date INTEGER)")
+
+	for _, tc := range []struct{ name, path, want string }{
+		{"safari", safari, "safari"},
+		{"ladybird", ladybird, "History"},
+		{"chrome", chrome, "urls"},
+		{"firefox", firefox, "moz_places"},
+	} {
+		got, err := detectHistoryTable(tc.path)
+		if err != nil {
+			t.Fatalf("detectHistoryTable(%s) returned error: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Fatalf("detectHistoryTable(%s) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDetectHistoryTableRejectsUnknownSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "History.db")
+	writeTables(t, path, "CREATE TABLE something_else (a TEXT)")
+	if _, err := detectHistoryTable(path); err == nil {
+		t.Fatal("detectHistoryTable() accepted a database with no history table")
+	}
+}
+
+func writeTables(t *testing.T, path string, statements ...string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
