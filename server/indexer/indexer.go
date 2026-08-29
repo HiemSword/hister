@@ -329,9 +329,19 @@ func New(cfg *config.Config) (*Indexer, error) {
 		sp = append(sp, v)
 	}
 	sensitivePattern := regexp.MustCompile(fmt.Sprintf("(%s)", strings.Join(sp, "|")))
-	idx, err := initializeIndexer(cfg.FullPath(""), cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords)
+	embeddingFingerprint := cfg.SemanticSearch.EmbeddingFingerprint()
+	idx, err := initializeIndexer(
+		cfg.FullPath(""),
+		cfg.Indexer.DetectLanguages,
+		cfg.Indexer.KeepStopwords,
+		"",
+	)
 	if err != nil {
 		return nil, err
+	}
+	if err := idx.backfillEmbeddingFingerprint(embeddingFingerprint); err != nil {
+		idx.Close()
+		return nil, fmt.Errorf("store initial embedding configuration metadata: %w", err)
 	}
 	idx.disablePreviews = cfg.App.DisablePreviews
 	idx.directories = cfg.Indexer.Directories
@@ -388,7 +398,7 @@ func registerHighlighters() error {
 	return registerHighlightersErr
 }
 
-func initializeIndexer(basePath string, detectLanguages, keepStopwords bool) (*Indexer, error) {
+func initializeIndexer(basePath string, detectLanguages, keepStopwords bool, embeddingFingerprint string) (*Indexer, error) {
 	if _, err := os.Stat(basePath); errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 			return nil, err
@@ -461,7 +471,7 @@ func initializeIndexer(basePath string, detectLanguages, keepStopwords bool) (*I
 		return nil, err
 	}
 	if created {
-		if err := writeIndexMetadata(idx, configuredIndexMetadata(detectLanguages, keepStopwords)); err != nil {
+		if err := writeIndexMetadata(idx, configuredIndexMetadata(detectLanguages, keepStopwords, embeddingFingerprint)); err != nil {
 			return nil, fmt.Errorf("store initial index metadata: %w", err)
 		}
 	}
@@ -582,6 +592,17 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	var embeddingFingerprint string
+	if idx.vectorStore != nil && idx.embedder != nil {
+		embeddingFingerprint = idx.semanticConfig.EmbeddingFingerprint()
+	}
+	if embeddingFingerprint == "" {
+		metadata, err := idx.getMetadata()
+		if err != nil {
+			return fmt.Errorf("read embedding configuration metadata: %w", err)
+		}
+		embeddingFingerprint = metadata.EmbeddingFingerprint
+	}
 	// TODO store new documents in both indexes while running reindex to guarantee not losing any data.
 	if !idx.reindexInProgress.CompareAndSwap(false, true) {
 		return errors.New("Reindex is already running")
@@ -608,7 +629,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 		return err
 	}
 	defer closeExtraSources()
-	tmpIdx, err := initializeIndexer(tmpBasePath, detectLanguages, keepStopwords)
+	tmpIdx, err := initializeIndexer(tmpBasePath, detectLanguages, keepStopwords, embeddingFingerprint)
 	if err != nil {
 		return err
 	}
@@ -751,7 +772,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 			log.Info().Msg(fmt.Sprintf("Reindexed [%d/%d]", processed, total))
 		}
 	}
-	if err := tmpIdx.setMetadata(configuredIndexMetadata(detectLanguages, keepStopwords)); err != nil {
+	if err := tmpIdx.setMetadata(configuredIndexMetadata(detectLanguages, keepStopwords, embeddingFingerprint)); err != nil {
 		return abortReindex(fmt.Errorf("store replacement index metadata: %w", err))
 	}
 	closeExtraSources()
@@ -777,7 +798,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 	if renameError != nil {
 		return errors.New("failed to rename tmp indexes during the reindex, resolve the issue manually")
 	}
-	replacement, err := initializeIndexer(basePath, detectLanguages, keepStopwords)
+	replacement, err := initializeIndexer(basePath, detectLanguages, keepStopwords, embeddingFingerprint)
 	if err != nil {
 		return err
 	}

@@ -10,9 +10,26 @@ import (
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/document"
 	"github.com/asciimoo/hister/server/testutil"
+	"github.com/asciimoo/hister/server/vectorstore"
 
 	"github.com/blevesearch/bleve/v2"
 )
+
+type metadataVectorStore struct{}
+
+func (*metadataVectorStore) Init() error { return nil }
+
+func (*metadataVectorStore) PutChunks(string, uint, []vectorstore.Chunk) error { return nil }
+
+func (*metadataVectorStore) Delete(string) error { return nil }
+
+func (*metadataVectorStore) Search([]float32, int, float64, uint) ([]vectorstore.Result, error) {
+	return nil, nil
+}
+
+func (*metadataVectorStore) Clear() error { return nil }
+
+func (*metadataVectorStore) Close() error { return nil }
 
 func requireIndexMetadata(t *testing.T, idx bleve.Index, want indexMetadata) {
 	t.Helper()
@@ -30,20 +47,23 @@ func requireIndexMetadata(t *testing.T, idx bleve.Index, want indexMetadata) {
 
 func TestIndexMetadataPersistence(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), true, true)
+	idx, err := initializeIndexer(cfg.FullPath(""), true, true, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
-	version, fingerprint, err := idx.GetMetadata()
+	metadata, err := idx.getMetadata()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != Version {
-		t.Fatalf("version = %d, want %d", version, Version)
+	if metadata.Version != Version {
+		t.Fatalf("version = %d, want %d", metadata.Version, Version)
 	}
 	wantFingerprint := AnalyzerFingerprint(true, true)
-	if fingerprint != wantFingerprint {
-		t.Fatalf("fingerprint = %q, want %q", fingerprint, wantFingerprint)
+	if metadata.AnalyzerFingerprint != wantFingerprint {
+		t.Fatalf("fingerprint = %q, want %q", metadata.AnalyzerFingerprint, wantFingerprint)
+	}
+	if metadata.EmbeddingFingerprint != "embedding" {
+		t.Fatalf("embedding fingerprint = %q, want embedding", metadata.EmbeddingFingerprint)
 	}
 
 	if err := idx.SetMetadata(Version-1, "custom"); err != nil {
@@ -51,27 +71,76 @@ func TestIndexMetadataPersistence(t *testing.T) {
 	}
 	idx.Close()
 
-	idx, err = initializeIndexer(cfg.FullPath(""), true, true)
+	idx, err = initializeIndexer(cfg.FullPath(""), true, true, "different")
 	if err != nil {
 		t.Fatalf("reopen indexer: %v", err)
 	}
 	defer idx.Close()
 
-	version, fingerprint, err = idx.GetMetadata()
+	metadata, err = idx.getMetadata()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != Version-1 {
-		t.Fatalf("reopened version = %d, want %d", version, Version-1)
+	if metadata.Version != Version-1 {
+		t.Fatalf("reopened version = %d, want %d", metadata.Version, Version-1)
 	}
-	if fingerprint != "custom" {
-		t.Fatalf("reopened fingerprint = %q, want custom", fingerprint)
+	if metadata.AnalyzerFingerprint != "custom" {
+		t.Fatalf("reopened fingerprint = %q, want custom", metadata.AnalyzerFingerprint)
+	}
+	if metadata.EmbeddingFingerprint != "embedding" {
+		t.Fatalf("reopened embedding fingerprint = %q, want embedding", metadata.EmbeddingFingerprint)
+	}
+	storedEmbeddingFingerprint, err := idx.GetEmbeddingFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedEmbeddingFingerprint != "embedding" {
+		t.Fatalf("GetEmbeddingFingerprint() = %q, want embedding", storedEmbeddingFingerprint)
+	}
+}
+
+func TestBackfillEmbeddingFingerprint(t *testing.T) {
+	cfg := testutil.Config(t)
+	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "")
+	if err != nil {
+		t.Fatalf("initialize indexer: %v", err)
+	}
+	defer idx.Close()
+
+	if err := idx.save(&document.Document{
+		URL:      "https://example.com/legacy",
+		Title:    "Legacy document",
+		Text:     "Document with embeddings created before fingerprint metadata",
+		AddCount: 1,
+	}); err != nil {
+		t.Fatalf("save legacy document: %v", err)
+	}
+	if err := idx.backfillEmbeddingFingerprint("current"); err != nil {
+		t.Fatal(err)
+	}
+	storedFingerprint, err := idx.GetEmbeddingFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedFingerprint != "current" {
+		t.Fatalf("embedding fingerprint = %q, want current", storedFingerprint)
+	}
+
+	if err := idx.backfillEmbeddingFingerprint("changed"); err != nil {
+		t.Fatal(err)
+	}
+	storedFingerprint, err = idx.GetEmbeddingFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedFingerprint != "current" {
+		t.Fatalf("embedding fingerprint after second backfill = %q, want current", storedFingerprint)
 	}
 }
 
 func TestGetMetadataRejectsInvalidInternalValue(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), false, false)
+	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -101,7 +170,7 @@ func TestGetMetadataRejectsInvalidInternalValue(t *testing.T) {
 
 func TestGetMetadataValidatesAllSubIndexes(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), true, false)
+	idx, err := initializeIndexer(cfg.FullPath(""), true, false, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -114,40 +183,59 @@ func TestGetMetadataValidatesAllSubIndexes(t *testing.T) {
 	languageIndex := idx.indexers[languageIndexName]
 	fingerprint := AnalyzerFingerprint(true, false)
 	if err := writeIndexMetadata(languageIndex, indexMetadata{
-		Version:             Version - 1,
-		AnalyzerFingerprint: fingerprint,
+		Version:              Version - 1,
+		AnalyzerFingerprint:  fingerprint,
+		EmbeddingFingerprint: "embedding",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	version, gotFingerprint, err := idx.GetMetadata()
+	metadata, err := idx.getMetadata()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != Version-1 {
-		t.Fatalf("version = %d, want oldest version %d", version, Version-1)
+	if metadata.Version != Version-1 {
+		t.Fatalf("version = %d, want oldest version %d", metadata.Version, Version-1)
 	}
-	if gotFingerprint != fingerprint {
-		t.Fatalf("fingerprint = %q, want %q", gotFingerprint, fingerprint)
+	if metadata.AnalyzerFingerprint != fingerprint {
+		t.Fatalf("fingerprint = %q, want %q", metadata.AnalyzerFingerprint, fingerprint)
+	}
+	if metadata.EmbeddingFingerprint != "embedding" {
+		t.Fatalf("embedding fingerprint = %q, want embedding", metadata.EmbeddingFingerprint)
 	}
 
 	if err := languageIndex.DeleteInternal([]byte(indexVersionKey)); err != nil {
 		t.Fatal(err)
 	}
-	version, gotFingerprint, err = idx.GetMetadata()
+	metadata, err = idx.getMetadata()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != -1 {
-		t.Fatalf("version with incomplete subindex metadata = %d, want -1", version)
+	if metadata.Version != -1 {
+		t.Fatalf("version with incomplete subindex metadata = %d, want -1", metadata.Version)
 	}
-	if gotFingerprint != fingerprint {
-		t.Fatalf("fingerprint = %q, want %q", gotFingerprint, fingerprint)
+	if metadata.AnalyzerFingerprint != fingerprint {
+		t.Fatalf("fingerprint = %q, want %q", metadata.AnalyzerFingerprint, fingerprint)
+	}
+	if metadata.EmbeddingFingerprint != "embedding" {
+		t.Fatalf("embedding fingerprint = %q, want embedding", metadata.EmbeddingFingerprint)
 	}
 
 	if err := writeIndexMetadata(languageIndex, indexMetadata{
-		Version:             Version,
-		AnalyzerFingerprint: "different",
+		Version:              Version,
+		AnalyzerFingerprint:  fingerprint,
+		EmbeddingFingerprint: "different",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := idx.GetMetadata(); err == nil {
+		t.Fatal("GetMetadata accepted inconsistent embedding fingerprints")
+	}
+
+	if err := writeIndexMetadata(languageIndex, indexMetadata{
+		Version:              Version,
+		AnalyzerFingerprint:  "different",
+		EmbeddingFingerprint: "embedding",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +246,7 @@ func TestGetMetadataValidatesAllSubIndexes(t *testing.T) {
 
 func TestLanguageIndexMetadataIsSelfContained(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), true, true)
+	idx, err := initializeIndexer(cfg.FullPath(""), true, true, "embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -167,8 +255,8 @@ func TestLanguageIndexMetadataIsSelfContained(t *testing.T) {
 		idx.Close()
 		t.Fatalf("add language index: %v", err)
 	}
-	wantMetadata := indexMetadata{Version: Version - 1, AnalyzerFingerprint: "custom"}
-	if err := idx.SetMetadata(wantMetadata.Version, wantMetadata.AnalyzerFingerprint); err != nil {
+	wantMetadata := indexMetadata{Version: Version - 1, AnalyzerFingerprint: "custom", EmbeddingFingerprint: "custom-embedding"}
+	if err := idx.setMetadata(wantMetadata); err != nil {
 		idx.Close()
 		t.Fatal(err)
 	}
@@ -197,7 +285,7 @@ func TestLanguageIndexMetadataIsSelfContained(t *testing.T) {
 
 func TestReindexStoresReplacementIndexMetadata(t *testing.T) {
 	cfg := testutil.Config(t)
-	idx, err := initializeIndexer(cfg.FullPath(""), false, false)
+	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "stored-embedding")
 	if err != nil {
 		t.Fatalf("initialize indexer: %v", err)
 	}
@@ -211,7 +299,11 @@ func TestReindexStoresReplacementIndexMetadata(t *testing.T) {
 		idx.Close()
 		t.Fatalf("save English document: %v", err)
 	}
-	if err := idx.SetMetadata(Version-1, "old"); err != nil {
+	if err := idx.setMetadata(indexMetadata{
+		Version:              Version - 1,
+		AnalyzerFingerprint:  "old",
+		EmbeddingFingerprint: "stored-embedding",
+	}); err != nil {
 		idx.Close()
 		t.Fatal(err)
 	}
@@ -227,24 +319,62 @@ func TestReindexStoresReplacementIndexMetadata(t *testing.T) {
 	}
 	defer idx.Close()
 
-	version, fingerprint, err := idx.GetMetadata()
+	metadata, err := idx.getMetadata()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != Version {
-		t.Fatalf("version = %d, want %d", version, Version)
+	if metadata.Version != Version {
+		t.Fatalf("version = %d, want %d", metadata.Version, Version)
 	}
 	wantFingerprint := AnalyzerFingerprint(true, true)
-	if fingerprint != wantFingerprint {
-		t.Fatalf("fingerprint = %q, want %q", fingerprint, wantFingerprint)
+	if metadata.AnalyzerFingerprint != wantFingerprint {
+		t.Fatalf("fingerprint = %q, want %q", metadata.AnalyzerFingerprint, wantFingerprint)
+	}
+	if metadata.EmbeddingFingerprint != "stored-embedding" {
+		t.Fatalf("embedding fingerprint = %q, want stored-embedding", metadata.EmbeddingFingerprint)
 	}
 
 	languageIndexName := indexNameForLanguage("en")
 	if _, exists := idx.indexers[languageIndexName]; !exists {
 		t.Fatalf("replacement language index %s was not created", languageIndexName)
 	}
-	wantMetadata := indexMetadata{Version: Version, AnalyzerFingerprint: wantFingerprint}
+	wantMetadata := indexMetadata{Version: Version, AnalyzerFingerprint: wantFingerprint, EmbeddingFingerprint: "stored-embedding"}
 	for _, subIndex := range idx.indexers {
 		requireIndexMetadata(t, subIndex, wantMetadata)
+	}
+}
+
+func TestReindexStoresActiveEmbeddingFingerprint(t *testing.T) {
+	cfg := testutil.Config(t)
+	idx, err := initializeIndexer(cfg.FullPath(""), false, false, "stored-embedding")
+	if err != nil {
+		t.Fatalf("initialize indexer: %v", err)
+	}
+	semanticConfig := config.SemanticSearch{
+		Enable:            true,
+		EmbeddingEndpoint: "http://localhost:11434/v1/embeddings",
+		EmbeddingModel:    "model",
+		Dimensions:        768,
+		MaxContextLength:  512,
+		ChunkOverlap:      64,
+		DocumentPrefix:    "document: ",
+	}
+	idx.semanticConfig = semanticConfig
+	idx.embedder = vectorstore.NewEmbedder(&semanticConfig)
+	idx.vectorStore = &metadataVectorStore{}
+
+	if err := idx.Reindex(&config.Rules{}, false, false, false, nil); err != nil {
+		idx.Close()
+		t.Fatalf("Reindex returned an error: %v", err)
+	}
+	defer idx.Close()
+
+	storedFingerprint, err := idx.GetEmbeddingFingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFingerprint := semanticConfig.EmbeddingFingerprint()
+	if storedFingerprint != wantFingerprint {
+		t.Fatalf("embedding fingerprint = %q, want %q", storedFingerprint, wantFingerprint)
 	}
 }

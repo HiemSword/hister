@@ -7,6 +7,8 @@ package config
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -183,6 +185,38 @@ type SemanticSearch struct {
 	ResultLimit             int               `yaml:"result_limit" mapstructure:"result_limit"`
 	SemanticWeight          float64           `yaml:"semantic_weight" mapstructure:"semantic_weight"`
 	MaxEmbeddingConcurrency int               `yaml:"max_embedding_concurrency" mapstructure:"max_embedding_concurrency"`
+}
+
+// EmbeddingFingerprint identifies configuration that changes stored document
+// embeddings. Query and ranking settings are intentionally excluded because
+// they do not require document embeddings to be rebuilt.
+func (s SemanticSearch) EmbeddingFingerprint() string {
+	if !s.Enable {
+		return ""
+	}
+	payload := struct {
+		Version          int    `json:"version"`
+		Endpoint         string `json:"endpoint"`
+		Model            string `json:"model"`
+		Dimensions       int    `json:"dimensions"`
+		MaxContextLength int    `json:"max_context_length"`
+		ChunkOverlap     int    `json:"chunk_overlap"`
+		DocumentPrefix   string `json:"document_prefix"`
+	}{
+		Version:          1,
+		Endpoint:         s.EmbeddingEndpoint,
+		Model:            s.EmbeddingModel,
+		Dimensions:       s.Dimensions,
+		MaxContextLength: s.MaxContextLength,
+		ChunkOverlap:     s.ChunkOverlap,
+		DocumentPrefix:   s.DocumentPrefix,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 const postgresHNSWMaxDimensions = 2000

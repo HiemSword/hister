@@ -86,3 +86,40 @@ func TestInitialAnalyzerFingerprint(t *testing.T) {
 		})
 	}
 }
+
+func TestEmbeddingConfigWarning(t *testing.T) {
+	tests := []struct {
+		name   string
+		stored string
+		active string
+		want   string
+	}{
+		{
+			name:   "matching configuration",
+			stored: "same",
+			active: "same",
+		},
+		{
+			name:   "semantic search disabled",
+			stored: "stored",
+		},
+		{
+			name:   "legacy indexed configuration",
+			active: "active",
+		},
+		{
+			name:   "changed configuration",
+			stored: "stored",
+			active: "active",
+			want:   "The semantic search embedding configuration differs from the indexed configuration. Run `hister reindex` to update your embeddings.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := embeddingConfigWarning(tt.stored, tt.active); got != tt.want {
+				t.Fatalf("embeddingConfigWarning() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

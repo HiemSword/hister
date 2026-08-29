@@ -621,3 +621,56 @@ func TestDefaultTUIUsesTerminalAppearance(t *testing.T) {
 		t.Fatalf("default TUI color scheme = %q, want terminal", got)
 	}
 }
+
+func TestSemanticSearchEmbeddingFingerprint(t *testing.T) {
+	baseConfig := SemanticSearch{
+		Enable:            true,
+		EmbeddingEndpoint: "http://localhost:11434/v1/embeddings",
+		EmbeddingModel:    "model",
+		Dimensions:        768,
+		MaxContextLength:  512,
+		ChunkOverlap:      64,
+		DocumentPrefix:    "document: ",
+	}
+	base := baseConfig.EmbeddingFingerprint()
+	if base == "" {
+		t.Fatal("enabled semantic search must have an embedding fingerprint")
+	}
+	if base != baseConfig.EmbeddingFingerprint() {
+		t.Fatal("embedding fingerprint must be deterministic")
+	}
+
+	changingFields := []func(*SemanticSearch){
+		func(cfg *SemanticSearch) { cfg.EmbeddingEndpoint = "http://example.com/v1/embeddings" },
+		func(cfg *SemanticSearch) { cfg.EmbeddingModel = "other-model" },
+		func(cfg *SemanticSearch) { cfg.Dimensions = 1024 },
+		func(cfg *SemanticSearch) { cfg.MaxContextLength = 1024 },
+		func(cfg *SemanticSearch) { cfg.ChunkOverlap = 128 },
+		func(cfg *SemanticSearch) { cfg.DocumentPrefix = "passage: " },
+	}
+	for i, change := range changingFields {
+		changed := baseConfig
+		change(&changed)
+		if base == changed.EmbeddingFingerprint() {
+			t.Errorf("stored embedding field change %d did not affect fingerprint", i)
+		}
+	}
+
+	queryConfig := baseConfig
+	queryConfig.QueryPrefix = "query: "
+	queryConfig.SimilarityThreshold = 0.9
+	queryConfig.ResultLimit = 5
+	queryConfig.SemanticWeight = 0.8
+	queryConfig.EmbeddingTimeout = 30
+	queryConfig.MaxEmbeddingBatchSize = 1
+	queryConfig.MaxEmbeddingConcurrency = 1
+	if base != queryConfig.EmbeddingFingerprint() {
+		t.Fatal("query and operational settings must not affect stored embedding fingerprint")
+	}
+
+	disabledConfig := baseConfig
+	disabledConfig.Enable = false
+	if fingerprint := disabledConfig.EmbeddingFingerprint(); fingerprint != "" {
+		t.Fatalf("disabled semantic search fingerprint = %q, want empty", fingerprint)
+	}
+}

@@ -527,6 +527,13 @@ func initialAnalyzerFingerprint(indexerVersion int, detectLanguages, keepStopwor
 	return indexer.AnalyzerFingerprint(detectLanguages, false)
 }
 
+func embeddingConfigWarning(storedFingerprint, activeFingerprint string) string {
+	if activeFingerprint == "" || storedFingerprint == "" || storedFingerprint == activeFingerprint {
+		return ""
+	}
+	return "The semantic search embedding configuration differs from the indexed configuration. Run `hister reindex` to update your embeddings."
+}
+
 func initIndex() *indexer.Indexer {
 	initDB()
 	initExtractor()
@@ -537,6 +544,10 @@ func initIndex() *indexer.Indexer {
 	v, storedFingerprint, err := idx.GetMetadata()
 	if err != nil {
 		exit(1, "Failed to retrieve index metadata: "+err.Error())
+	}
+	storedEmbeddingFingerprint, err := idx.GetEmbeddingFingerprint()
+	if err != nil {
+		exit(1, "Failed to retrieve embedding configuration metadata: "+err.Error())
 	}
 	metadataMissing := v == -1 || storedFingerprint == ""
 	if metadataMissing {
@@ -570,6 +581,10 @@ func initIndex() *indexer.Indexer {
 	}
 	if storedFingerprint != activeFingerprint {
 		log.Warn().Msg("The analyzer configuration differs from the indexed configuration. Run `hister reindex` to update your index.")
+	}
+	activeEmbeddingFingerprint := cfg.SemanticSearch.EmbeddingFingerprint()
+	if warning := embeddingConfigWarning(storedEmbeddingFingerprint, activeEmbeddingFingerprint); warning != "" {
+		log.Warn().Msg(warning)
 	}
 	log.Debug().Msg("Indexer initialization complete")
 	return idx

@@ -11,19 +11,22 @@ import (
 )
 
 const (
-	indexVersionKey   = "hister.index_version"
-	analyzerConfigKey = "hister.analyzer_fingerprint"
+	indexVersionKey    = "hister.index_version"
+	analyzerConfigKey  = "hister.analyzer_fingerprint"
+	embeddingConfigKey = "hister.embedding_fingerprint"
 )
 
 type indexMetadata struct {
-	Version             int
-	AnalyzerFingerprint string
+	Version              int
+	AnalyzerFingerprint  string
+	EmbeddingFingerprint string
 }
 
-func configuredIndexMetadata(detectLanguages, keepStopwords bool) indexMetadata {
+func configuredIndexMetadata(detectLanguages, keepStopwords bool, embeddingFingerprint string) indexMetadata {
 	return indexMetadata{
-		Version:             Version,
-		AnalyzerFingerprint: AnalyzerFingerprint(detectLanguages, keepStopwords),
+		Version:              Version,
+		AnalyzerFingerprint:  AnalyzerFingerprint(detectLanguages, keepStopwords),
+		EmbeddingFingerprint: embeddingFingerprint,
 	}
 }
 
@@ -47,6 +50,12 @@ func readIndexMetadata(idx bleve.Index) (indexMetadata, bool, error) {
 	}
 	metadata.AnalyzerFingerprint = string(fingerprint)
 
+	embeddingFingerprint, err := idx.GetInternal([]byte(embeddingConfigKey))
+	if err != nil {
+		return metadata, false, fmt.Errorf("read embedding configuration fingerprint: %w", err)
+	}
+	metadata.EmbeddingFingerprint = string(embeddingFingerprint)
+
 	complete := metadata.Version >= 0 && metadata.AnalyzerFingerprint != ""
 	return metadata, complete, nil
 }
@@ -64,6 +73,16 @@ func writeIndexMetadata(idx bleve.Index, metadata indexMetadata) error {
 	); err != nil {
 		return fmt.Errorf("store analyzer configuration fingerprint: %w", err)
 	}
+	if metadata.EmbeddingFingerprint == "" {
+		if err := idx.DeleteInternal([]byte(embeddingConfigKey)); err != nil {
+			return fmt.Errorf("clear embedding configuration fingerprint: %w", err)
+		}
+	} else if err := idx.SetInternal(
+		[]byte(embeddingConfigKey),
+		[]byte(metadata.EmbeddingFingerprint),
+	); err != nil {
+		return fmt.Errorf("store embedding configuration fingerprint: %w", err)
+	}
 	if err := idx.SetInternal(
 		[]byte(indexVersionKey),
 		[]byte(strconv.Itoa(metadata.Version)),
@@ -78,11 +97,36 @@ func (i *Indexer) GetMetadata() (int, string, error) {
 	return metadata.Version, metadata.AnalyzerFingerprint, err
 }
 
+// GetEmbeddingFingerprint returns the fingerprint of the configuration used
+// to build the stored document embeddings. An empty value means it is unknown.
+func (i *Indexer) GetEmbeddingFingerprint() (string, error) {
+	metadata, err := i.getMetadata()
+	return metadata.EmbeddingFingerprint, err
+}
+
+func (i *Indexer) backfillEmbeddingFingerprint(fingerprint string) error {
+	if fingerprint == "" {
+		return nil
+	}
+	metadata, err := i.getMetadata()
+	if err != nil {
+		return err
+	}
+	if metadata.EmbeddingFingerprint != "" {
+		return nil
+	}
+	metadata.EmbeddingFingerprint = fingerprint
+	return i.setMetadata(metadata)
+}
+
 func (i *Indexer) SetMetadata(version int, analyzerFingerprint string) error {
-	return i.setMetadata(indexMetadata{
-		Version:             version,
-		AnalyzerFingerprint: analyzerFingerprint,
-	})
+	metadata, err := i.getMetadata()
+	if err != nil {
+		return err
+	}
+	metadata.Version = version
+	metadata.AnalyzerFingerprint = analyzerFingerprint
+	return i.setMetadata(metadata)
 }
 
 func (i *Indexer) getMetadata() (indexMetadata, error) {
@@ -92,6 +136,8 @@ func (i *Indexer) getMetadata() (indexMetadata, error) {
 	versionsComplete := true
 	fingerprintsComplete := true
 	fingerprintIndex := ""
+	embeddingFingerprintsComplete := true
+	embeddingFingerprintIndex := ""
 
 	for name, idx := range i.indexers {
 		subIndexMetadata, _, err := readIndexMetadata(idx)
@@ -117,6 +163,19 @@ func (i *Indexer) getMetadata() (indexMetadata, error) {
 				name,
 			)
 		}
+
+		if subIndexMetadata.EmbeddingFingerprint == "" {
+			embeddingFingerprintsComplete = false
+		} else if metadata.EmbeddingFingerprint == "" {
+			metadata.EmbeddingFingerprint = subIndexMetadata.EmbeddingFingerprint
+			embeddingFingerprintIndex = name
+		} else if metadata.EmbeddingFingerprint != subIndexMetadata.EmbeddingFingerprint {
+			return indexMetadata{Version: -1}, fmt.Errorf(
+				"embedding configuration fingerprints differ between %s and %s",
+				embeddingFingerprintIndex,
+				name,
+			)
+		}
 	}
 
 	if !versionsComplete {
@@ -124,6 +183,9 @@ func (i *Indexer) getMetadata() (indexMetadata, error) {
 	}
 	if !fingerprintsComplete {
 		metadata.AnalyzerFingerprint = ""
+	}
+	if !embeddingFingerprintsComplete {
+		metadata.EmbeddingFingerprint = ""
 	}
 	return metadata, nil
 }
