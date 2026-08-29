@@ -98,6 +98,12 @@ type mcpUntrustedRecord struct {
 	Fields     map[string]any `json:"fields"`
 }
 
+// serveMCPGet reports that server initiated event streams are not supported.
+func serveMCPGet(c *webContext) {
+	c.Response.Header().Set("Allow", http.MethodPost)
+	c.Response.WriteHeader(http.StatusMethodNotAllowed)
+}
+
 // serveMCP handles POST /mcp requests using the MCP Streamable HTTP transport.
 func serveMCP(c *webContext) {
 	var req mcpRequest

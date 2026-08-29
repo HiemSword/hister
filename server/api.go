@@ -1028,6 +1028,14 @@ func init() {
 		{
 			Name:        "MCP",
 			Path:        "/mcp",
+			Method:      GET,
+			NoAuth:      true,
+			Handler:     serveMCPGet,
+			Description: "Return status 405 because server initiated event streams are not supported.",
+		},
+		{
+			Name:        "MCP",
+			Path:        "/mcp",
 			Method:      POST,
 			Public:      true,
 			Handler:     serveMCP,

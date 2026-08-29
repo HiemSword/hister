@@ -203,6 +203,23 @@ func TestMCPToolDescriptionsWarnAboutUntrustedContent(t *testing.T) {
 	}
 }
 
+func TestMCPGetReturnsMethodNotAllowedWithoutAuthentication(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	rec := testutil.ServeHTTP(t, handler, http.MethodGet, "/mcp", nil, map[string]string{
+		"Accept": "text/event-stream",
+	})
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET /mcp status = %d, want %d; body=%s", rec.Code, http.StatusMethodNotAllowed, rec.Body.String())
+	}
+	if got := rec.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("GET /mcp Allow header = %q, want %q", got, http.MethodPost)
+	}
+	if got := rec.Header().Get("Content-Type"); got == "text/html" || strings.HasPrefix(got, "text/html;") {
+		t.Fatalf("GET /mcp Content-Type = %q, must not be HTML", got)
+	}
+}
+
 func TestMCPInitializeAdvertisesStructuredContentProtocol(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)
 	rec := testutil.ServeHTTP(t, handler, http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`), map[string]string{
