@@ -1620,15 +1620,30 @@ func serveSuggest(c *webContext) {
 	descriptions := []string{}
 	suggestionURLs := []string{}
 	if q != "" {
-		res, err := searchIndex(c.Indexer, &indexer.Query{
+		res, err := doSearch(c.Indexer, &indexer.Query{
 			Text:  q,
 			Limit: suggestLimit,
-		}, c.effectiveRules(), c.UserID)
+		}, c.effectiveRules(), c.UserID, historyEnabled(c))
 		if err != nil {
 			log.Warn().Err(err).Msg("suggest search failed")
 		}
 		if res != nil {
+			for _, h := range res.History {
+				if len(suggestions) >= suggestLimit {
+					break
+				}
+				title := strings.TrimSpace(h.Title)
+				if title == "" {
+					title = h.URL
+				}
+				suggestions = append(suggestions, title)
+				descriptions = append(descriptions, h.URL)
+				suggestionURLs = append(suggestionURLs, historySuggestionURL(c.Config, h))
+			}
 			for _, d := range res.Documents {
+				if len(suggestions) >= suggestLimit {
+					break
+				}
 				title := strings.TrimSpace(d.Title)
 				if title == "" {
 					title = d.URL
@@ -1653,16 +1668,40 @@ func serveSuggest(c *webContext) {
 func suggestionURL(cfg *config.Config, d *document.Document) string {
 	switch d.Type {
 	case document.Local:
-		return cfg.BaseURL("/api/file?id=" + url.QueryEscape(d.DocumentID))
-	case document.RemoteFile:
-		values := url.Values{"id": {d.URL}}
-		if title := strings.TrimSpace(d.Title); title != "" {
-			values.Set("title", title)
+		if d.DocumentID != "" {
+			return cfg.BaseURL("/api/file?id=" + url.QueryEscape(d.DocumentID))
 		}
-		return cfg.BaseURL("/preview?" + values.Encode())
+		return previewSuggestionURL(cfg, d.URL, d.Title)
+	case document.RemoteFile:
+		return previewSuggestionURL(cfg, d.URL, d.Title)
 	default:
 		return d.URL
 	}
+}
+
+func historySuggestionURL(cfg *config.Config, h *model.URLCount) string {
+	d := &document.Document{
+		DocumentID: h.DocID,
+		URL:        h.URL,
+		Title:      h.Title,
+	}
+	if parsed, err := url.Parse(h.URL); err == nil {
+		switch strings.ToLower(parsed.Scheme) {
+		case "file":
+			d.Type = document.Local
+		case "remote-file":
+			d.Type = document.RemoteFile
+		}
+	}
+	return suggestionURL(cfg, d)
+}
+
+func previewSuggestionURL(cfg *config.Config, documentURL, title string) string {
+	values := url.Values{"id": {documentURL}}
+	if title = strings.TrimSpace(title); title != "" {
+		values.Set("title", title)
+	}
+	return cfg.BaseURL("/preview?" + values.Encode())
 }
 
 func serveAddAlias(c *webContext) {
