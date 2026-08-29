@@ -223,7 +223,7 @@ func init() {
 			Method:      GET,
 			Public:      true,
 			Handler:     serveSuggest,
-			Description: "OpenSearch suggestions endpoint; returns query completions",
+			Description: "OpenSearch suggestions endpoint; returns query completions, descriptions, and target URLs",
 			Args: []*EndpointArg{
 				{
 					Name:        "q",

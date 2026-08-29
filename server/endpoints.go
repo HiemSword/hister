@@ -1617,6 +1617,8 @@ func serveSuggest(c *webContext) {
 	}
 	q := c.Request.URL.Query().Get("q")
 	suggestions := []string{}
+	descriptions := []string{}
+	suggestionURLs := []string{}
 	if q != "" {
 		res, err := searchIndex(c.Indexer, &indexer.Query{
 			Text:  q,
@@ -1632,10 +1634,12 @@ func serveSuggest(c *webContext) {
 					title = d.URL
 				}
 				suggestions = append(suggestions, title)
+				descriptions = append(descriptions, d.URL)
+				suggestionURLs = append(suggestionURLs, suggestionURL(c.Config, d))
 			}
 		}
 	}
-	jr, err := json.Marshal([]any{q, suggestions})
+	jr, err := json.Marshal([]any{q, suggestions, descriptions, suggestionURLs})
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to marshal suggest response")
 		return
@@ -1643,6 +1647,21 @@ func serveSuggest(c *webContext) {
 	c.Response.Header().Set("Content-Type", "application/x-suggestions+json")
 	if _, err := c.Response.Write(jr); err != nil {
 		log.Warn().Err(err).Msg("failed to write suggest response")
+	}
+}
+
+func suggestionURL(cfg *config.Config, d *document.Document) string {
+	switch d.Type {
+	case document.Local:
+		return cfg.BaseURL("/api/file?id=" + url.QueryEscape(d.DocumentID))
+	case document.RemoteFile:
+		values := url.Values{"id": {d.URL}}
+		if title := strings.TrimSpace(d.Title); title != "" {
+			values.Set("title", title)
+		}
+		return cfg.BaseURL("/preview?" + values.Encode())
+	default:
+		return d.URL
 	}
 }
 
