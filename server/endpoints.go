@@ -584,14 +584,7 @@ func serveSearch(c *webContext) {
 func doSearch(idx *indexer.Indexer, query *indexer.Query, rules *config.Rules, userID uint, includeHistory bool) (*indexer.Results, error) {
 	start := time.Now()
 	oq := query.Text
-	if rules != nil {
-		query.Text = rules.ResolveAliases(query.Text)
-	}
-	query.UserID = userID
-	if rules != nil && rules.Priority != nil {
-		query.PriorityPatterns = rules.Priority.ReStrs
-	}
-	res, err := idx.Search(query)
+	res, err := searchIndex(idx, query, rules, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -622,6 +615,17 @@ func doSearch(idx *indexer.Indexer, query *indexer.Query, rules *config.Rules, u
 	}
 	res.SearchDuration = formatSearchDuration(time.Since(start))
 	return res, nil
+}
+
+func searchIndex(idx *indexer.Indexer, query *indexer.Query, rules *config.Rules, userID uint) (*indexer.Results, error) {
+	if rules != nil {
+		query.Text = rules.ResolveAliases(query.Text)
+	}
+	query.UserID = userID
+	if rules != nil && rules.Priority != nil {
+		query.PriorityPatterns = rules.Priority.ReStrs
+	}
+	return idx.Search(query)
 }
 
 func formatSearchDuration(duration time.Duration) string {
@@ -1614,11 +1618,10 @@ func serveSuggest(c *webContext) {
 	q := c.Request.URL.Query().Get("q")
 	suggestions := []string{}
 	if q != "" {
-		res, err := c.Indexer.Search(&indexer.Query{
-			Text:   c.effectiveRules().ResolveAliases(q),
-			UserID: c.UserID,
-			Limit:  suggestLimit,
-		})
+		res, err := searchIndex(c.Indexer, &indexer.Query{
+			Text:  q,
+			Limit: suggestLimit,
+		}, c.effectiveRules(), c.UserID)
 		if err != nil {
 			log.Warn().Err(err).Msg("suggest search failed")
 		}
