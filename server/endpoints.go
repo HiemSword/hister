@@ -44,7 +44,13 @@ type historyItem struct {
 	Pin    *bool  `json:"pin"`
 }
 
-const healthCheckPath = "/health"
+const (
+	healthCheckPath                 = "/health"
+	webUIDocumentCacheControl       = "no-store"
+	webUIVersionCacheControl        = "no-cache"
+	webUIAssetCacheControl          = "public, max-age=3600"
+	webUIImmutableAssetCacheControl = "public, max-age=31536000, immutable"
+)
 
 var ws = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -158,6 +164,7 @@ func withOptionalBasePathPrefix(prefix string, next http.Handler) http.Handler {
 }
 
 func serveIndex(c *webContext) {
+	c.Response.Header().Set("Cache-Control", webUIDocumentCacheControl)
 	content, ok := staticTextFiles["index.html"]
 	if !ok {
 		serve500(c)
@@ -170,6 +177,35 @@ func serveIndex(c *webContext) {
 	}
 }
 
+func webUICacheControl(requestPath string) string {
+	assetPath := strings.TrimPrefix(requestPath, "/")
+	assetPath = strings.TrimPrefix(assetPath, "static/")
+	switch {
+	case assetPath == "" || assetPath == "index.html":
+		return webUIDocumentCacheControl
+	case assetPath == "_app/version.json":
+		return webUIVersionCacheControl
+	case strings.HasPrefix(assetPath, "_app/immutable/"):
+		return webUIImmutableAssetCacheControl
+	default:
+		return webUIAssetCacheControl
+	}
+}
+
+func serveStaticContent(c *webContext, path string, content []byte) {
+	ext := filepath.Ext(path)
+	if mimeType := mime.TypeByExtension(ext); mimeType != "" {
+		c.Response.Header().Set("Content-Type", mimeType)
+	} else {
+		c.Response.Header().Set("Content-Type", "application/octet-stream")
+	}
+	c.Response.Header().Set("Cache-Control", webUICacheControl(path))
+	c.Response.WriteHeader(http.StatusOK)
+	if _, err := c.Response.Write(content); err != nil {
+		log.Warn().Err(err).Msg("failed to write static file response")
+	}
+}
+
 // serveSPA serves the SPA index.html for any route not matching a static file.
 func serveSPA(c *webContext) {
 	path := strings.TrimPrefix(c.Request.URL.Path, "/")
@@ -178,17 +214,7 @@ func serveSPA(c *webContext) {
 		return
 	}
 	if content, ok := staticTextFiles[path]; ok {
-		ext := filepath.Ext(path)
-		if mimeType := mime.TypeByExtension(ext); mimeType != "" {
-			c.Response.Header().Set("Content-Type", mimeType)
-		} else {
-			// Default to application/octet-stream if we can't detect the type
-			c.Response.Header().Set("Content-Type", "application/octet-stream")
-		}
-		c.Response.WriteHeader(http.StatusOK)
-		if _, err := c.Response.Write(content); err != nil {
-			log.Warn().Err(err).Msg("failed to write static text response")
-		}
+		serveStaticContent(c, path, content)
 		return
 	}
 	// If the exact file exists in the embedded app FS, serve it directly
@@ -199,18 +225,7 @@ func serveSPA(c *webContext) {
 			serve500(c)
 			return
 		}
-		// Detect and set proper MIME type
-		ext := filepath.Ext(path)
-		if mimeType := mime.TypeByExtension(ext); mimeType != "" {
-			c.Response.Header().Set("Content-Type", mimeType)
-		} else {
-			// Default to application/octet-stream if we can't detect the type
-			c.Response.Header().Set("Content-Type", "application/octet-stream")
-		}
-		c.Response.WriteHeader(http.StatusOK)
-		if _, err := c.Response.Write(content); err != nil {
-			log.Warn().Err(err).Msg("failed to write static file response")
-		}
+		serveStaticContent(c, path, content)
 		return
 	}
 
@@ -1965,6 +1980,7 @@ func serveFavicon(c *webContext) {
 		return
 	}
 	c.Response.Header().Add("Content-Type", "image/vnd.microsoft.icon")
+	c.Response.Header().Set("Cache-Control", webUICacheControl("favicon.ico"))
 	if _, err := c.Response.Write(i); err != nil {
 		log.Warn().Err(err).Msg("failed to write favicon response")
 	}
@@ -2026,6 +2042,10 @@ func decodeFaviconDataURI(dataURI string) (string, []byte, error) {
 }
 
 func serveStatic(c *webContext) {
+	assetPath := strings.TrimPrefix(c.Request.URL.Path, "/static/")
+	if _, err := iofs.Stat(appSubFS, assetPath); err == nil {
+		c.Response.Header().Set("Cache-Control", webUICacheControl(assetPath))
+	}
 	staticFileServer.ServeHTTP(c.Response, c.Request)
 }
 
