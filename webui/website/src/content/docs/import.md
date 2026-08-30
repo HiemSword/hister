@@ -136,10 +136,6 @@ hister import browser safari
 
 **Reading it requires Full Disk Access** for the terminal or application running Hister, granted under System Settings > Privacy & Security > Full Disk Access. Without it the import fails with a permission error naming the setting.
 
-Safari splits its history across two tables, storing one row per visit, and counts timestamps from 2001-01-01 rather than 1970. Hister handles all of this internally; `--start-date` and `--min-visit` behave exactly as they do for any other browser.
-
-Safari has no Hister browser extension, so an import is a snapshot rather than a running feed: re-run it to pick up pages visited since.
-
 Use `--min-visit N` to import only URLs that have at least `N` recorded visits.
 Use `--start-date YYYY-MM-DD` to import only URLs whose most recent recorded
 visit is on or after that date:
