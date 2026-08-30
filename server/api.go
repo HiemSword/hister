@@ -554,7 +554,7 @@ func init() {
 			Method:       GET,
 			CSRFRequired: true,
 			Handler:      serveRules,
-			Description:  "Retrieve current skip/priority rules and query aliases",
+			Description:  "Retrieve current skip, priority, and versioning rules and query aliases",
 		},
 		{
 			Name:         "Save rules",
@@ -562,7 +562,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveRules,
-			Description:  "Update skip/priority/versioning rules. Accepts application/x-www-form-urlencoded.",
+			Description:  "Update the supplied skip, priority, or versioning rules. Omitted rule groups remain unchanged. Accepts application/x-www-form-urlencoded.",
 			Args: []*EndpointArg{
 				{
 					Name:        "skip",

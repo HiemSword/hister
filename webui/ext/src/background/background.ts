@@ -180,11 +180,13 @@ async function saveSkipRule(
   const rulesData = await rulesResp.json();
   const existingSkip: string[] = rulesData.skip ?? [];
   const existingPriority: string[] = rulesData.priority ?? [];
+  const existingVersioning: string[] = rulesData.versioning ?? [];
   const newSkip = [...existingSkip, pattern];
   const saveResp = await fetchAPI(baseURL + 'api/rules', {
     formData: {
       skip: newSkip.join(' '),
       priority: existingPriority.join(' '),
+      versioning: existingVersioning.join(' '),
     },
     customHeaders,
   });

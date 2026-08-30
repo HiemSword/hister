@@ -1293,25 +1293,35 @@ func serveRules(c *webContext) {
 		return
 	}
 	f := c.Request.PostForm
-	skipPatterns := uniqueStrings(strings.Fields(f.Get("skip")))
-	priorityPatterns := uniqueStrings(strings.Fields(f.Get("priority")))
-	versioningPatterns := uniqueStrings(strings.Fields(f.Get("versioning")))
-	for label, patterns := range map[string][]string{
-		"skip":       skipPatterns,
-		"priority":   priorityPatterns,
-		"versioning": versioningPatterns,
+	type ruleUpdate struct {
+		patterns []string
+		target   **config.Rule
+	}
+	updates := make([]ruleUpdate, 0, 3)
+	for _, field := range []struct {
+		label  string
+		target **config.Rule
+	}{
+		{label: "skip", target: &rules.Skip},
+		{label: "priority", target: &rules.Priority},
+		{label: "versioning", target: &rules.Versioning},
 	} {
+		if !f.Has(field.label) {
+			continue
+		}
+		patterns := uniqueStrings(strings.Fields(f.Get(field.label)))
 		if err := validatePatterns(patterns); err != nil {
-			http.Error(c.Response, fmt.Sprintf("%s: %s", label, err.Error()), http.StatusBadRequest)
+			http.Error(c.Response, fmt.Sprintf("%s: %s", field.label, err.Error()), http.StatusBadRequest)
 			return
 		}
+		updates = append(updates, ruleUpdate{patterns: patterns, target: field.target})
 	}
-	rules.Skip.ReStrs = skipPatterns
-	rules.Priority.ReStrs = priorityPatterns
-	if rules.Versioning == nil {
-		rules.Versioning = &config.Rule{ReStrs: make([]string, 0)}
+	for _, update := range updates {
+		if *update.target == nil {
+			*update.target = &config.Rule{ReStrs: make([]string, 0)}
+		}
+		(*update.target).ReStrs = update.patterns
 	}
-	rules.Versioning.ReStrs = versioningPatterns
 	if err := rules.Compile(); err != nil {
 		log.Error().Err(err).Msg("failed to compile rules")
 		serve500(c)
