@@ -7,7 +7,7 @@ interface DocsCategory {
 export const docsStructure: DocsCategory[] = [
   {
     name: 'Start Here',
-    slugs: ['intro', 'quickstart', 'installing'],
+    slugs: ['intro', 'quickstart', 'installing', 'query-language'],
     color: 'indigo',
   },
   {
@@ -22,7 +22,7 @@ export const docsStructure: DocsCategory[] = [
   },
   {
     name: 'Search and Integrations',
-    slugs: ['terminal-client', 'query-language', 'extractors', 'mcp'],
+    slugs: ['terminal-client', 'extractors', 'mcp'],
     color: 'lime',
   },
   {
