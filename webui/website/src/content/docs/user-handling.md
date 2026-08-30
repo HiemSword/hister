@@ -130,16 +130,18 @@ Updated at: 2026-03-26 09:00:00
 Modify an existing user account. At least one flag must be provided.
 
 ```bash
-hister update-user USERNAME [--username NEW] [--regen-token] [--toggle-admin]
+hister update-user USERNAME [--username NEW] [--password] [--regen-token] [--toggle-admin]
 ```
 
 | Flag             | Description                                                        |
 | ---------------- | ------------------------------------------------------------------ |
 | `--username NEW` | Rename the user to `NEW`.                                          |
+| `--password`     | Prompt for and set a new password.                                 |
 | `--regen-token`  | Generate a new access token and print it. Invalidates the old one. |
 | `--toggle-admin` | Toggle admin status on or off.                                     |
 
 Flags may be combined. When `--username` is used together with other flags, the rename is applied first.
+Passwords must contain at least eight characters and are entered twice for confirmation.
 
 ## Per-User Rules and Aliases
 
@@ -221,6 +223,6 @@ Every user account has a personal access token used for API authentication. Toke
 - Browser cookies contain only random session identifiers. Session data and identifier hashes are stored in the configured SQL database. Logout revokes the database record immediately.
 - Personal access tokens bypass session cookies and can be used in scripts. Keep them secret and regenerate them if compromised.
 - OAuth state tokens are single use random values stored in the server side session. They prevent cross site request forgery during the OAuth redirect flow.
-- OAuth accounts have no password set. If you need to disable an OAuth user's access, use `hister delete-user` or remove the provider from the configuration.
+- OAuth accounts are created without a password. An administrator can assign one with `hister update-user USERNAME --password`. If you need to disable an OAuth user's access, use `hister delete-user` or remove the provider from the configuration.
 - Enable `server.oauth_only: true` to enforce OAuth login and prevent password authentication. Personal access tokens remain valid for API and CLI access. In multiple user mode, `app.access_token` must contain a user's personal token.
 - User handling is intended for a trusted group of users on a shared instance (family, team). For public-facing deployments, place Hister behind a reverse proxy with HTTPS and only index content that may be shown publicly.

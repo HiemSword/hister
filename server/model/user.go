@@ -166,6 +166,21 @@ func UpdateUsername(username, newUsername string) error {
 	return nil
 }
 
+func UpdatePassword(username, password string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	result := DB.Model(&User{}).Where("username = ?", username).Update("password", string(hash))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 func GetUserByOAuthID(oauthID string) (*User, error) {
 	var u User
 	if err := DB.Where("o_auth_id = ?", oauthID).First(&u).Error; err != nil {

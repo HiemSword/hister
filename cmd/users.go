@@ -24,19 +24,9 @@ var createUserCmd = &cobra.Command{
 	PreRun: requireUserHandlingAndInitDB,
 	Run: func(cmd *cobra.Command, args []string) {
 		username := args[0]
-		password, err := promptPassword("Password: ")
+		password, err := promptConfirmedPassword("Password: ", "Confirm password: ")
 		if err != nil {
-			exit(1, "Failed to read password: "+err.Error())
-		}
-		if len(password) < 8 {
-			exit(1, "password must be at least 8 characters long")
-		}
-		confirm, err := promptPassword("Confirm password: ")
-		if err != nil {
-			exit(1, "Failed to read password: "+err.Error())
-		}
-		if password != confirm {
-			exit(1, "passwords do not match")
+			exit(1, err.Error())
 		}
 		isAdmin, _ := cmd.Flags().GetBool("admin")
 		if _, err := model.CreateUser(username, password, isAdmin); err != nil {
@@ -110,7 +100,7 @@ var showUserCmd = &cobra.Command{
 var updateUserCmd = &cobra.Command{
 	Use:    "update-user USERNAME",
 	Short:  "Update a user",
-	Long:   "Update a user account (requires user_handling to be enabled). Use flags to change username, regenerate token, or toggle admin status.",
+	Long:   "Update a user account (requires user_handling to be enabled). Use flags to change username or password, regenerate token, or toggle admin status.",
 	Args:   cobra.ExactArgs(1),
 	PreRun: requireUserHandlingAndInitDB,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -123,6 +113,18 @@ var updateUserCmd = &cobra.Command{
 			}
 			cliPrintln(cliSuccessStyle.Render("✓") + " Username changed: " + cliInfoStyle.Render(username) + " → " + cliInfoStyle.Render(newUsername))
 			username = newUsername
+			changed = true
+		}
+
+		if changePassword, _ := cmd.Flags().GetBool("password"); changePassword {
+			password, err := promptConfirmedPassword("New password: ", "Confirm new password: ")
+			if err != nil {
+				exit(1, err.Error())
+			}
+			if err := model.UpdatePassword(username, password); err != nil {
+				exit(1, "Failed to update password: "+err.Error())
+			}
+			cliPrintln(cliSuccessStyle.Render("✓") + " Password changed for " + cliInfoStyle.Render(username))
 			changed = true
 		}
 
@@ -149,9 +151,27 @@ var updateUserCmd = &cobra.Command{
 		}
 
 		if !changed {
-			exit(1, "no changes specified - use --username, --regen-token, or --toggle-admin")
+			exit(1, "no changes specified - use --username, --password, --regen-token, or --toggle-admin")
 		}
 	},
+}
+
+func promptConfirmedPassword(passwordPrompt, confirmationPrompt string) (string, error) {
+	password, err := promptPassword(passwordPrompt)
+	if err != nil {
+		return "", fmt.Errorf("Failed to read password: %w", err)
+	}
+	if len(password) < 8 {
+		return "", errors.New("password must be at least 8 characters long")
+	}
+	confirmation, err := promptPassword(confirmationPrompt)
+	if err != nil {
+		return "", fmt.Errorf("Failed to read password: %w", err)
+	}
+	if password != confirmation {
+		return "", errors.New("passwords do not match")
+	}
+	return password, nil
 }
 
 type passwordModel struct {

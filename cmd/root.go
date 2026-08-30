@@ -340,6 +340,7 @@ func init() {
 	createUserCmd.Flags().Bool("admin", false, "create user with admin privileges")
 
 	updateUserCmd.Flags().String("username", "", "new username")
+	updateUserCmd.Flags().Bool("password", false, "change password")
 	updateUserCmd.Flags().Bool("regen-token", false, "regenerate access token")
 	updateUserCmd.Flags().Bool("toggle-admin", false, "toggle admin status")
 
