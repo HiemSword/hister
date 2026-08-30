@@ -213,6 +213,12 @@ func importHistoryFile(file_path string, cmd *cobra.Command, startDate *time.Tim
 // checked first because it is the only one identified by a pair of tables, so a match is
 // unambiguous.
 func detectHistoryTable(path string) (_ string, err error) {
+	// Before opening it, not after: a path-only import reaches here first, and without this the
+	// driver's "unable to open database file" would arrive ahead of any explanation.
+	if err := browserHistoryReadable(path); err != nil {
+		return "", err
+	}
+
 	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?immutable=1&mode=ro", path))
 	if err != nil {
 		return "", fmt.Errorf("open database: %w", err)
@@ -593,22 +599,31 @@ func browserImportStartDate(cmd *cobra.Command) (*time.Time, error) {
 // browserHistoryReadable reports why a history database cannot be read, or nil if it can.
 //
 // sql.Open is lazy, so a file the process may not read fails much later and much less clearly —
-// the driver reports "unable to open database file", which on macOS sends people looking at file
-// permissions when the cause is that ~/Library/Safari is protected by the system's privacy
-// controls and no chmod will help. Opening the file here turns that into an answer.
+// the driver reports "unable to open database file", which sends people looking at file
+// permissions. On Safari's history that is the wrong place to look: the directory is protected by
+// macOS privacy controls and no chmod will help. Opening the file here turns that into an answer.
+//
+// The hint is limited to Safari deliberately. A permission error on a Chrome profile is an ordinary
+// permission error, and telling somebody to open the Full Disk Access pane would send them off to
+// change a system setting that was never the problem.
 func browserHistoryReadable(path string) error {
 	f, err := os.Open(path)
 	if err == nil {
 		return f.Close()
 	}
-	if runtime.GOOS == "darwin" && errors.Is(err, os.ErrPermission) {
+	if runtime.GOOS == "darwin" && errors.Is(err, os.ErrPermission) && isSafariHistoryPath(path) {
 		return fmt.Errorf(
-			"%w: on macOS, reading this database requires Full Disk Access for the terminal or "+
+			"%w: reading Safari's history requires Full Disk Access for the terminal or "+
 				"application running hister (System Settings > Privacy & Security > Full Disk Access)",
 			err,
 		)
 	}
 	return err
+}
+
+// isSafariHistoryPath reports whether a path is inside Safari's protected data directory.
+func isSafariHistoryPath(path string) bool {
+	return strings.Contains(filepath.ToSlash(strings.ToLower(path)), "/library/safari/")
 }
 
 func browserImportURLQuery(table string, minVisit int, startDate *time.Time) (string, error) {
@@ -1175,6 +1190,8 @@ func getBrowserType(path string) string {
 		return "opera"
 	} else if strings.Contains(path, "ladybird") {
 		return "ladybird"
+	} else if strings.Contains(path, "safari") {
+		return "safari"
 	} else {
 		return "unknown"
 	}

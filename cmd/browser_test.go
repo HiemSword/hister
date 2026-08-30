@@ -255,3 +255,28 @@ func writeTables(t *testing.T, path string, statements ...string) {
 		}
 	}
 }
+
+func TestGetBrowserTypeRecognisesSafari(t *testing.T) {
+	// Without this the selection screen labels Safari "unknown", and typing "safari" at the
+	// exclusion prompt matches nothing.
+	got := getBrowserType("/Users/someone/Library/Safari/History.db")
+	if got != "safari" {
+		t.Fatalf("getBrowserType() = %q, want %q", got, "safari")
+	}
+}
+
+func TestIsSafariHistoryPath(t *testing.T) {
+	// The Full Disk Access hint is only true for Safari's protected directory. Anywhere else, a
+	// permission error is an ordinary permission error and the hint would send someone to change
+	// a system setting that was never the problem.
+	for path, want := range map[string]bool{
+		"/Users/someone/Library/Safari/History.db":                         true,
+		"/Users/someone/library/safari/History.db":                         true,
+		"/Users/someone/Library/Application Support/Google/Chrome/History": false,
+		"/tmp/History.db": false,
+	} {
+		if got := isSafariHistoryPath(path); got != want {
+			t.Fatalf("isSafariHistoryPath(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
