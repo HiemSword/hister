@@ -7,12 +7,12 @@ interface DocsCategory {
 export const docsStructure: DocsCategory[] = [
   {
     name: 'Start Here',
-    slugs: ['intro', 'quickstart', 'installing', 'query-language'],
+    slugs: ['intro', 'quickstart', 'installing', 'browser-extension', 'query-language'],
     color: 'indigo',
   },
   {
     name: 'Collecting Content',
-    slugs: ['browser-ingestion', 'browser-extension', 'import', 'crawler', 'file-types'],
+    slugs: ['browser-ingestion', 'import', 'crawler', 'file-types'],
     color: 'coral',
   },
   {
