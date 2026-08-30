@@ -36,10 +36,12 @@ Usage:
   hister import browser DB_PATH                auto-detect browser type
   hister import browser BROWSER_TYPE DB_PATH   import a browser type with a specific database path
 
-Browser types supported for automatic detection: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox, ladybird
+Browser types supported for automatic detection: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox, ladybird, safari
 
 The Firefox URL database is usually located at ~/.mozilla/firefox/*.default/places.sqlite
 The Chrome/Chromium URL database is usually located at ~/.config/chromium/Default/History
+The Safari URL database is located at ~/Library/Safari/History.db (macOS only), and reading it
+requires Full Disk Access for the terminal or application running hister
 
 Use --start-date (format: YYYY-MM-DD) to only import URLs whose most recent
 recorded visit is on or after the given date.
@@ -185,16 +187,9 @@ func importBrowser(browser string, cmd *cobra.Command, startDate *time.Time) {
 }
 
 func importHistoryFile(file_path string, cmd *cobra.Command, startDate *time.Time) {
-	var table string
-
-	if strings.HasSuffix(file_path, "places.sqlite") {
-		table = "moz_places"
-	} else if strings.HasSuffix(file_path, "History") {
-		table = "urls"
-	} else if strings.HasSuffix(file_path, "History.db") {
-		table = "History"
-	} else {
-		log.Fatal().Str("file", file_path).Msg("Couldn't auto detect table")
+	table, err := detectHistoryTable(file_path)
+	if err != nil {
+		log.Fatal().Err(err).Str("file", file_path).Msg("Couldn't auto detect table")
 	}
 
 	importDB([]DBToImport{
@@ -205,6 +200,70 @@ func importHistoryFile(file_path string, cmd *cobra.Command, startDate *time.Tim
 	},
 		cmd,
 		startDate)
+}
+
+// detectHistoryTable identifies a browser history database by the tables it contains.
+//
+// This used to guess from the filename, which cannot work: Safari and Ladybird both call their
+// database History.db, so a Safari history was read as Ladybird's and failed with "no such table:
+// History". Chrome's is called History with no extension, which the same check would have to
+// distinguish by the absence of a suffix.
+//
+// What a database IS cannot be settled by what it is called, and the answer is inside it. Safari is
+// checked first because it is the only one identified by a pair of tables, so a match is
+// unambiguous.
+func detectHistoryTable(path string) (_ string, err error) {
+	// Before opening it, not after: a path-only import reaches here first, and without this the
+	// driver's "unable to open database file" would arrive ahead of any explanation.
+	if err := browserHistoryReadable(path); err != nil {
+		return "", err
+	}
+
+	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?immutable=1&mode=ro", path))
+	if err != nil {
+		return "", fmt.Errorf("open database: %w", err)
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+
+	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type = 'table'")
+	if err != nil {
+		return "", fmt.Errorf("read schema: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
+
+	tables := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return "", err
+		}
+		// SQLite is case-insensitive about table names; the schema records whatever case created
+		// them, so compare in one case and return the name this code expects to query.
+		tables[strings.ToLower(name)] = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	switch {
+	case tables["history_items"] && tables["history_visits"]:
+		return "safari", nil
+	case tables["moz_places"]:
+		return "moz_places", nil
+	case tables["urls"]:
+		return "urls", nil
+	case tables["history"]:
+		return "History", nil
+	}
+	return "", errors.New("no recognised browser history table found")
 }
 
 func importDB(databases []DBToImport, cmd *cobra.Command, startDate *time.Time) {
@@ -395,13 +454,33 @@ func importDB(databases []DBToImport, cmd *cobra.Command, startDate *time.Time) 
 	}
 }
 
-type browserHistoryTimestampSchema struct {
-	column             string
+// browserHistorySource describes where a browser keeps the two things an import needs: the URL,
+// and when that URL was last visited.
+//
+// Most browsers keep both in one flat table, so from is empty and the table name is used as the
+// FROM clause directly. Safari does not: it holds URLs in history_items and one row per visit in
+// history_visits, so it needs a join. Expressing that as a derived table keeps every other
+// browser's query byte for byte what it was.
+type browserHistorySource struct {
+	// from is the FROM clause. Empty means the table name itself.
+	from string
+	// column is the last-visit timestamp as exposed by from.
+	column string
+	// unitsPerSecond and epochOffsetSeconds convert a Unix timestamp into the browser's own
+	// representation: (unix + epochOffsetSeconds) * unitsPerSecond.
 	unitsPerSecond     int64
 	epochOffsetSeconds int64
 }
 
-var browserHistoryTimestampSchemas = map[string]browserHistoryTimestampSchema{
+// fromExpr returns the FROM clause for a source reached under table.
+func (s browserHistorySource) fromExpr(table string) string {
+	if s.from != "" {
+		return s.from
+	}
+	return table
+}
+
+var browserHistorySources = map[string]browserHistorySource{
 	"history": {
 		column:         "last_visited_time",
 		unitsPerSecond: 1_000,
@@ -414,6 +493,26 @@ var browserHistoryTimestampSchemas = map[string]browserHistoryTimestampSchema{
 		column:             "last_visit_time",
 		unitsPerSecond:     1_000_000,
 		epochOffsetSeconds: 11_644_473_600,
+	},
+	// Safari, and the reason from exists.
+	//
+	// The visits are reduced to the most recent one per URL so the derived table has the same
+	// shape as every other browser's: one row per URL, carrying visit_count so --min-visit
+	// keeps working.
+	//
+	// Its epoch offset is NEGATIVE because Safari counts from 2001-01-01, the Core Data epoch,
+	// rather than from 1970 — a Unix timestamp is 978,307,200 seconds further along than the
+	// same moment expressed in Safari's terms.
+	"safari": {
+		from: "(SELECT history_items.url AS url, " +
+			"history_items.visit_count AS visit_count, " +
+			"MAX(history_visits.visit_time) AS last_visit_time " +
+			"FROM history_items " +
+			"JOIN history_visits ON history_visits.history_item = history_items.id " +
+			"GROUP BY history_items.id) AS safari_history",
+		column:             "last_visit_time",
+		unitsPerSecond:     1,
+		epochOffsetSeconds: -978_307_200,
 	},
 }
 
@@ -431,6 +530,15 @@ func prepareBrowserImports(
 			issues = append(issues, browserImportPreparationIssue{
 				databaseFile: database.databaseFile,
 				err:          fmt.Errorf("create browser history query: %w", err),
+			})
+			continue
+		}
+
+		if err := browserHistoryReadable(database.databaseFile); err != nil {
+			issues = append(issues, browserImportPreparationIssue{
+				databaseFile: database.databaseFile,
+				query:        q,
+				err:          fmt.Errorf("open database: %w", err),
 			})
 			continue
 		}
@@ -488,8 +596,45 @@ func browserImportStartDate(cmd *cobra.Command) (*time.Time, error) {
 	return &startDate, nil
 }
 
+// browserHistoryReadable reports why a history database cannot be read, or nil if it can.
+//
+// sql.Open is lazy, so a file the process may not read fails much later and much less clearly —
+// the driver reports "unable to open database file", which sends people looking at file
+// permissions. On Safari's history that is the wrong place to look: the directory is protected by
+// macOS privacy controls and no chmod will help. Opening the file here turns that into an answer.
+//
+// The hint is limited to Safari deliberately. A permission error on a Chrome profile is an ordinary
+// permission error, and telling somebody to open the Full Disk Access pane would send them off to
+// change a system setting that was never the problem.
+func browserHistoryReadable(path string) error {
+	f, err := os.Open(path)
+	if err == nil {
+		return f.Close()
+	}
+	if runtime.GOOS == "darwin" && errors.Is(err, os.ErrPermission) && isSafariHistoryPath(path) {
+		return fmt.Errorf(
+			"%w: reading Safari's history requires Full Disk Access for the terminal or "+
+				"application running hister (System Settings > Privacy & Security > Full Disk Access)",
+			err,
+		)
+	}
+	return err
+}
+
+// isSafariHistoryPath reports whether a path is inside Safari's protected data directory.
+func isSafariHistoryPath(path string) bool {
+	return strings.Contains(filepath.ToSlash(strings.ToLower(path)), "/library/safari/")
+}
+
 func browserImportURLQuery(table string, minVisit int, startDate *time.Time) (string, error) {
-	q := fmt.Sprintf("SELECT DISTINCT url FROM %s WHERE (url LIKE 'http://%%' OR url LIKE 'https://%%')", table)
+	// An unknown table is still usable: it is passed through as the FROM clause, which is what
+	// lets a caller name a table this code has never heard of. Only date filtering needs to know
+	// the schema, so only date filtering fails on one.
+	source, known := browserHistorySources[strings.ToLower(table)]
+	q := fmt.Sprintf(
+		"SELECT DISTINCT url FROM %s WHERE (url LIKE 'http://%%' OR url LIKE 'https://%%')",
+		source.fromExpr(table),
+	)
 	if minVisit > 1 {
 		q += fmt.Sprintf(" AND visit_count >= %d", minVisit)
 	}
@@ -497,12 +642,11 @@ func browserImportURLQuery(table string, minVisit int, startDate *time.Time) (st
 		return q, nil
 	}
 
-	schema, ok := browserHistoryTimestampSchemas[strings.ToLower(table)]
-	if !ok {
+	if !known {
 		return "", fmt.Errorf("start date filtering is not supported for browser history table %q", table)
 	}
-	startTimestamp := (startDate.Unix() + schema.epochOffsetSeconds) * schema.unitsPerSecond
-	q += fmt.Sprintf(" AND %s >= %d", schema.column, startTimestamp)
+	startTimestamp := (startDate.Unix() + source.epochOffsetSeconds) * source.unitsPerSecond
+	q += fmt.Sprintf(" AND %s >= %d", source.column, startTimestamp)
 	return q, nil
 }
 
@@ -681,12 +825,25 @@ func getDBPaths() []browserDB {
 	chromium_table := "urls"
 	firefox_table := "moz_places"
 	ladybird_table := "History"
+	safari_table := "safari"
 
 	switch runtime.GOOS {
 	default:
 		log.Fatal().Msgf("Failed to detect os")
 	case "darwin":
 		candidates = []browserDBCandidates{
+			// safari
+			//
+			// One fixed location, with no profile directories to glob: Safari keeps a single
+			// history database per user. Reading it requires Full Disk Access — see
+			// browserHistoryReadable.
+			{
+				"Safari",
+				safari_table,
+				[]string{
+					filepath.Join(home, "Library", "Safari", "History.db"),
+				},
+			},
 			// firefox
 			{
 				"Firefox",
@@ -959,6 +1116,8 @@ func browserTableName(browser string) string {
 		return "urls"
 	case "ladybird":
 		return "History"
+	case "safari":
+		return "safari"
 	}
 	return ""
 }
@@ -1031,6 +1190,8 @@ func getBrowserType(path string) string {
 		return "opera"
 	} else if strings.Contains(path, "ladybird") {
 		return "ladybird"
+	} else if strings.Contains(path, "safari") {
+		return "safari"
 	} else {
 		return "unknown"
 	}

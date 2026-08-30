@@ -122,7 +122,19 @@ hister import browser ~/.mozilla/firefox/example.default/places.sqlite
 hister import browser firefox ~/.mozilla/firefox/example.default/places.sqlite
 ```
 
-Firefox stores history in `places.sqlite` inside its profile directory. Chromium based browsers usually store it in a file named `History` inside their profile directory.
+Firefox stores history in `places.sqlite` inside its profile directory. Chromium based browsers usually store it in a file named `History` inside their profile directory. Safari stores it in `~/Library/Safari/History.db`.
+
+When only a path is given, the browser is identified by the tables the database contains rather than by its filename. This matters because the filenames overlap: Safari and Ladybird both use `History.db`.
+
+### Safari
+
+Safari is supported on macOS. It keeps a single history database per user, so there are no profile directories to choose between:
+
+```bash
+hister import browser safari
+```
+
+**Reading it requires Full Disk Access** for the terminal or application running Hister, granted under System Settings > Privacy & Security > Full Disk Access. Without it the import fails with a permission error naming the setting.
 
 Use `--min-visit N` to import only URLs that have at least `N` recorded visits.
 Use `--start-date YYYY-MM-DD` to import only URLs whose most recent recorded
