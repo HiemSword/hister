@@ -9,7 +9,7 @@ description: 'Deploy Hister with Docker Compose, persistent storage, external ac
 
 Hister provides official Docker images for both AMD64 and ARM64 architectures.
 
-> **Note on Permissions**: The `latest` image runs as a **non-root user** (UID/GID 1000) by default for better security. Ensure the mounted volume (e.g., `./data`) has the correct permissions. If you need to run as root, use the `ghcr.io/asciimoo/hister:latest-root` image.
+The `latest` image runs as the nonroot user with UID and GID `65532`. The examples below use a Docker managed volume so Docker can initialize it with the permissions from the image. If you need to run as root, use the `ghcr.io/asciimoo/hister:latest-root` image.
 
 ### Configuring Hister in a Container
 
@@ -31,12 +31,14 @@ services:
   hister:
     image: ghcr.io/asciimoo/hister:latest
     container_name: hister
-    user: '1000:1000'
     restart: unless-stopped
     volumes:
-      - ./data:/hister/data
+      - hister_data:/hister/data
     ports:
       - 4433:4433
+
+volumes:
+  hister_data:
 ```
 
 ### Docker Compose with External Access
@@ -48,15 +50,17 @@ services:
   hister:
     image: ghcr.io/asciimoo/hister:latest
     container_name: hister
-    user: '1000:1000'
     restart: unless-stopped
     environment:
       - HISTER__SERVER__ADDRESS=0.0.0.0:4433
       - HISTER__SERVER__BASE_URL=http://192.168.1.100:4433 # Use your actual IP/hostname
     volumes:
-      - ./data:/hister/data
+      - hister_data:/hister/data
     ports:
       - 4433:4433
+
+volumes:
+  hister_data:
 ```
 
 ### Docker Compose Behind Reverse Proxy
@@ -68,13 +72,38 @@ services:
   hister:
     image: ghcr.io/asciimoo/hister:latest
     container_name: hister
-    user: '1000:1000'
     restart: unless-stopped
     environment:
       - HISTER__SERVER__ADDRESS=0.0.0.0:4433
       - HISTER__SERVER__BASE_URL=https://hister.example.com # Your public URL
     volumes:
-      - ./data:/hister/data
+      - hister_data:/hister/data
     ports:
       - 4433:4433
+
+volumes:
+  hister_data:
+```
+
+### Using a Host Directory
+
+If you want to store the data in a host directory instead of a Docker managed volume, create the directory and give the container user ownership before starting Hister:
+
+```bash
+mkdir -p ./data
+sudo chown 65532:65532 ./data
+```
+
+Then replace the volume entry with:
+
+```yaml
+volumes:
+  - ./data:/hister/data
+```
+
+On a host with SELinux enabled, add the `Z` option so Docker assigns an appropriate label:
+
+```yaml
+volumes:
+  - ./data:/hister/data:Z
 ```
