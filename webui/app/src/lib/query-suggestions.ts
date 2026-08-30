@@ -198,8 +198,10 @@ export function buildQuerySuggestions(options: QuerySuggestionOptions): QuerySug
     limit = 12,
   } = options;
   const suggestions: QuerySuggestion[] = [];
+  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedServerSuggestion = serverSuggestion.trim().toLowerCase();
 
-  if (serverSuggestion && serverSuggestion !== query) {
+  if (normalizedServerSuggestion && normalizedServerSuggestion !== normalizedQuery) {
     suggestions.push({
       id: `spelling:${serverSuggestion}`,
       group: 'Suggested query',
@@ -216,9 +218,14 @@ export function buildQuerySuggestions(options: QuerySuggestionOptions): QuerySug
   const contextual = contextualValueSuggestions(token.value, capabilities, facets);
   if (contextual !== null) return [...suggestions, ...contextual].slice(0, limit);
 
-  const normalizedQuery = query.trim().toLowerCase();
   const recentMatches = recentSearches
     .filter((recent, index, all) => all.indexOf(recent) === index)
+    .filter((recent) => {
+      const normalizedRecent = recent.trim().toLowerCase();
+      return (
+        normalizedRecent !== normalizedQuery && normalizedRecent !== normalizedServerSuggestion
+      );
+    })
     .filter((recent) => !normalizedQuery || recent.toLowerCase().includes(normalizedQuery))
     .slice(0, normalizedQuery ? 3 : 5)
     .map((recent): QuerySuggestion => ({
