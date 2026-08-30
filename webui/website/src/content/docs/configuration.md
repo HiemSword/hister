@@ -539,20 +539,24 @@ description: 'Explore every configuration section, option, default value, enviro
   ];
 </script>
 
-Hister is configured via a YAML file. The config file is searched in the following order:
+Hister is configured via a YAML file. It selects a primary config path using this precedence:
+
+1. The path supplied with `--config`.
+2. The path in `HISTER_CONFIG`, when `--config` is not supplied.
+3. `./config.yml` in the current working directory.
+
+If the selected primary path does not exist, Hister searches the platform paths below and uses the first config file it finds.
 
 ### Default Config Locations
 
 **Linux** (respects `$XDG_CONFIG_HOME`):
 
-- `$XDG_CONFIG_HOME/hister/config.yml` (if `$XDG_CONFIG_HOME` is set)
-- `~/.config/hister/config.yml` (default)
+- `$XDG_CONFIG_HOME/hister/config.yml` if `$XDG_CONFIG_HOME` is set, otherwise `~/.config/hister/config.yml`
 - `~/.histerrc` (legacy, deprecated)
 
 **macOS** (respects `$XDG_CONFIG_HOME`):
 
-- `$XDG_CONFIG_HOME/hister/config.yml` (if `$XDG_CONFIG_HOME` is set)
-- `~/Library/Preferences/hister/config.yml` (recommended)
+- `$XDG_CONFIG_HOME/hister/config.yml` if `$XDG_CONFIG_HOME` is set, otherwise `~/Library/Preferences/hister/config.yml`
 - `~/Library/Application Support/hister/config.yml` (backwards compatible)
 - `~/.histerrc` (legacy, deprecated)
 - `~/.config/hister/config.yml` (legacy)
@@ -565,7 +569,7 @@ Hister is configured via a YAML file. The config file is searched in the followi
 - `~\.histerrc` (legacy, deprecated)
 - `~\.config\hister\config.yml` (legacy)
 
-Hister searches these paths in order and uses the first config file it finds. If you have a legacy `~/.histerrc` file and Hister finds it, you'll see a deprecation warning suggesting you move it to the recommended location.
+If you have a legacy `~/.histerrc` file and Hister finds it, you'll see a deprecation warning suggesting you move it to the recommended location.
 
 ### Creating a Config File
 
