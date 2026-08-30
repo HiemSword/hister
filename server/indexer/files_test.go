@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -406,6 +407,67 @@ func TestReindexSkipsLocalFilesExcludedByConfig(t *testing.T) {
 	}
 	if idx.GetByURLAndUser(files.PathToFileURL(codePath), 0) != nil {
 		t.Fatal("excluded code file remains indexed after reindex")
+	}
+}
+
+func TestReindexReloadsMarkdownFile(t *testing.T) {
+	testDir := t.TempDir()
+	const initialTitle = "old old old old old"
+	const title = "test test test test test"
+	markdownPath := testutil.WriteFile(t, testDir, "heading.md", []byte("# "+initialTitle+"\n"))
+
+	cfg := testutil.Config(t)
+	cfg.Indexer.Directories = []*config.Directory{{Path: testDir}}
+	idx := newTestIndexer(t, cfg)
+	defer idx.Close()
+
+	if err := idx.IndexFile(markdownPath, 0); err != nil {
+		t.Fatalf("index Markdown file: %v", err)
+	}
+	url := files.PathToFileURL(markdownPath)
+	before := idx.GetByURLAndUser(url, 0)
+	if before == nil {
+		t.Fatal("indexed Markdown file not found")
+	}
+	testutil.WriteFile(t, testDir, "heading.md", []byte("# "+title+"\n"))
+	updated := time.Unix(before.Updated+10, 0)
+	if err := os.Chtimes(markdownPath, updated, updated); err != nil {
+		t.Fatalf("set Markdown modification time: %v", err)
+	}
+
+	if err := idx.Reindex(&config.Rules{}, false, cfg.Indexer.DetectLanguages, cfg.Indexer.KeepStopwords, cfg.Indexer.Directories); err != nil {
+		t.Fatalf("reindex Markdown file: %v", err)
+	}
+
+	got := idx.GetByURLAndUser(url, 0)
+	if got == nil {
+		t.Fatal("Markdown file not found after reindex")
+	}
+	if got.Type != document.Local {
+		t.Fatalf("document type = %v, want %v", got.Type, document.Local)
+	}
+	if got.Title != title {
+		t.Fatalf("title = %q, want %q", got.Title, title)
+	}
+	if got.Text != title {
+		t.Fatalf("text = %q, want %q", got.Text, title)
+	}
+	if !strings.Contains(got.HTML, "<h1") {
+		t.Fatalf("HTML = %q, want rendered Markdown heading", got.HTML)
+	}
+	if got.Metadata["type"] != "markdown" {
+		t.Fatalf("metadata type = %v, want markdown", got.Metadata["type"])
+	}
+	if got.Added != before.Added || got.Updated != updated.Unix() || got.AddCount != before.AddCount {
+		t.Fatalf(
+			"document metadata after reindex = added %d, updated %d, count %d; want %d, %d, %d",
+			got.Added,
+			got.Updated,
+			got.AddCount,
+			before.Added,
+			updated.Unix(),
+			before.AddCount,
+		)
 	}
 }
 

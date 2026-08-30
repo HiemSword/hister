@@ -720,13 +720,20 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, directory owner changed")
 						continue
 					}
-					if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
-						log.Warn().Str("URL", d.URL).Msg("Skipping document, file not found")
+					info, err := os.Stat(filePath)
+					if err != nil {
+						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't access file")
 						continue
 					}
 					if dir.Label != "" {
 						d.Label = dir.Label
 					}
+					reloaded, err := tmpIdx.reloadLocalFile(filePath, info, d)
+					if err != nil {
+						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't prepare local file")
+						continue
+					}
+					d = reloaded
 				}
 				log.Debug().Str("URL", d.URL).Msg("Indexing")
 				d.SetSkipSensitiveCheck(skipSensitiveChecks)

@@ -22,15 +22,6 @@ var fileTypeHandlers = []fileTypeHandler{
 	plainTextFileType{},
 }
 
-func (i *Indexer) indexFileContent(path string, d *document.Document, content []byte) error {
-	if err := PrepareFileContent(path, d, content); err != nil {
-		return err
-	}
-	// IndexFile already read this content from the server filesystem, so it is
-	// a trusted local write and does not need submitted file URL validation.
-	return i.AddDocument(d)
-}
-
 // PrepareFileContent extracts indexable fields using the same handler as a
 // watched local file. It does not read, identify, or index the document.
 func PrepareFileContent(path string, d *document.Document, content []byte) error {

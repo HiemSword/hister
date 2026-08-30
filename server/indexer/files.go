@@ -348,6 +348,38 @@ func configuredFileLabel(dirs []*config.Directory, path string) string {
 	return dir.Label
 }
 
+func (i *Indexer) prepareLocalFile(path string, info fs.FileInfo, d *document.Document) error {
+	if info.Size() == 0 {
+		return ErrEmptyFile
+	}
+	if info.Size() > i.maxFileSize {
+		return fmt.Errorf("%w: %d bytes", ErrFileTooLarge, info.Size())
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return &document.ReadFileError{Msg: err.Error()}
+	}
+
+	d.Updated = info.ModTime().Unix()
+	d.SetTrustedLocalFile()
+	return PrepareFileContent(path, d, content)
+}
+
+func (i *Indexer) reloadLocalFile(path string, info fs.FileInfo, source *document.Document) (*document.Document, error) {
+	d := &document.Document{
+		URL:      source.URL,
+		Added:    source.Added,
+		UserID:   source.UserID,
+		Label:    source.Label,
+		AddCount: source.AddCount,
+	}
+	if err := i.prepareLocalFile(path, info, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
 func (i *Indexer) IndexFile(path string, userID uint) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -378,22 +410,15 @@ func (i *Indexer) IndexFile(path string, userID uint) error {
 		return i.Save(existing)
 	}
 
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return &document.ReadFileError{
-			Msg: err.Error(),
-		}
-	}
-
 	doc := &document.Document{
-		URL:     fileURL,
-		Updated: info.ModTime().Unix(),
-		UserID:  userID,
-		Label:   label,
+		URL:    fileURL,
+		UserID: userID,
+		Label:  label,
 	}
-	doc.SetTrustedLocalFile()
-
-	return i.indexFileContent(path, doc, content)
+	if err := i.prepareLocalFile(path, info, doc); err != nil {
+		return err
+	}
+	return i.AddDocument(doc)
 }
 
 // DeleteFile removes the document for the given filesystem path from the index.
