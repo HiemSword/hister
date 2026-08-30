@@ -4,6 +4,7 @@
   import { base } from '$app/paths';
   import { Button } from '@hister/components/ui/button';
   import * as Card from '@hister/components/ui/card';
+  import * as Dialog from '@hister/components/ui/dialog';
   import { PageHeader } from '@hister/components';
   import { StatusMessage } from '$lib/components';
   import { Eye, EyeOff, RefreshCw, User, Info } from '@lucide/svelte';
@@ -14,6 +15,7 @@
   let message = $state('');
   let messageType = $state<'success' | 'error'>('success');
   let generating = $state(false);
+  let resetConfirmOpen = $state(false);
   let isAdmin = $state(false);
   let version = $state('');
 
@@ -49,7 +51,7 @@
       const data = await r.json();
       token = data.token;
       tokenVisible = true;
-      message = 'New token generated. Store it securely — it will not be shown again.';
+      message = 'New token generated. Store it securely. It will not be shown again.';
       messageType = 'success';
     } catch {
       message = 'Failed to generate token';
@@ -57,6 +59,11 @@
     } finally {
       generating = false;
     }
+  }
+
+  function confirmTokenReset() {
+    resetConfirmOpen = false;
+    void generateToken();
   }
 </script>
 
@@ -131,13 +138,13 @@
         {/if}
 
         <Button
-          onclick={generateToken}
+          onclick={() => (resetConfirmOpen = true)}
           disabled={generating}
           variant="outline"
           class="border-brutal-border font-outfit hover:border-hister-indigo h-11 w-full border-[3px] text-sm font-bold tracking-wide transition-all hover:shadow-[4px_4px_0_var(--brutal-shadow)] disabled:opacity-50"
         >
           <RefreshCw size={16} class="mr-2 {generating ? 'animate-spin' : ''}" />
-          {token ? 'Regenerate Token' : 'Generate Token'}
+          {generating ? 'Resetting Token...' : 'Reset Token'}
         </Button>
       </Card.Content>
     </Card.Root>
@@ -168,3 +175,41 @@
     {/if}
   </div>
 </div>
+
+<Dialog.Root bind:open={resetConfirmOpen}>
+  <Dialog.Content
+    showCloseButton={false}
+    class="border-border-brand bg-card-surface max-w-md gap-0 overflow-hidden rounded-none border-[3px] p-0 shadow-[6px_6px_0px_var(--brutal-shadow)]"
+  >
+    <Dialog.Header class="bg-hister-rose flex-row items-center gap-2 px-5 py-4">
+      <Dialog.Title class="flex items-center gap-2">
+        <RefreshCw class="size-5 text-white" />
+        <span class="font-outfit text-lg font-extrabold text-white">Reset access token?</span>
+      </Dialog.Title>
+    </Dialog.Header>
+    <div class="space-y-3 px-5 py-5">
+      <Dialog.Description class="font-inter text-text-brand-secondary text-sm">
+        Your current access token will stop working immediately. Any CLI, browser extension, or API
+        client using it must be updated with the new token.
+      </Dialog.Description>
+      <p class="font-inter text-text-brand-muted text-xs">The new token will be shown only once.</p>
+    </div>
+    <Dialog.Footer class="border-border-brand-muted bg-muted-surface border-t-[3px] px-5 py-3">
+      <Button
+        type="button"
+        variant="outline"
+        onclick={() => (resetConfirmOpen = false)}
+        class="border-border-brand-muted text-text-brand-secondary rounded-none"
+      >
+        Cancel
+      </Button>
+      <Button
+        type="button"
+        onclick={confirmTokenReset}
+        class="bg-hister-rose font-space border-brutal-border rounded-none border-[3px] text-xs font-bold text-white uppercase"
+      >
+        Reset Token
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
