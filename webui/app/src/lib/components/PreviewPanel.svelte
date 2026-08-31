@@ -33,6 +33,7 @@
 
   interface Props {
     url: string;
+    documentId?: string;
     hintTitle?: string;
     onclose: () => void;
     fullscreen?: boolean;
@@ -44,6 +45,7 @@
 
   let {
     url,
+    documentId = '',
     hintTitle = '',
     onclose,
     fullscreen = false,
@@ -142,31 +144,44 @@
 
   // Tracks whether this component instance has already performed its first load.
   // Plain variable (not $state) so it persists across effect runs without triggering reactivity.
-  let _mountedWithUrl = '';
+  let _mountedWithDocument = '';
+
+  function documentRequestUrl(
+    path: string,
+    u: string,
+    selectedDocumentId: string,
+    extra: Record<string, string> = {},
+  ): string {
+    const params = new URLSearchParams({ url: u, ...extra });
+    if (selectedDocumentId) params.set('document_id', selectedDocumentId);
+    return `${path}?${params.toString()}`;
+  }
 
   // Reset all state when the document URL changes, then load with no explicit extractor.
   // On the very first run (component mount), restore initialViewingVersion if one was supplied
   // so that toggling fullscreen preserves the archived-version view.
   $effect(() => {
     const u = url;
+    const selectedDocumentId = documentId;
     const hint = hintTitle;
     if (u) {
-      const isFirstLoad = _mountedWithUrl === '';
-      _mountedWithUrl = u;
+      const isFirstLoad = _mountedWithDocument === '';
+      _mountedWithDocument = selectedDocumentId || u;
       extractorName = '';
       availableExtractors = [];
       extractorsLoaded = false;
       // untrack so that reading the prop here does not make the effect re-run on prop change.
       const versionId = isFirstLoad ? untrack(() => initialViewingVersionId) : null;
-      loadContent(u, hint, '', versionId);
+      loadContent(u, hint, '', versionId, selectedDocumentId);
     }
   });
 
   // Reload when the user picks a different extractor.
   $effect(() => {
     const name = extractorName;
+    const selectedDocumentId = documentId;
     if (url && name) {
-      loadContent(url, hintTitle, name);
+      loadContent(url, hintTitle, name, null, selectedDocumentId);
     }
   });
 
@@ -175,6 +190,7 @@
     hint: string,
     extractor: string = '',
     versionId: number | null = null,
+    selectedDocumentId: string = documentId,
   ) {
     loading = true;
     content = '';
@@ -193,11 +209,10 @@
       versionCount = 0;
     }
     try {
-      const extractorParam = extractor ? `&extractor=${encodeURIComponent(extractor)}` : '';
-      const versionParam = versionId != null ? `&version=${versionId}` : '';
-      const resp = await apiFetch(
-        `/preview?url=${encodeURIComponent(u)}${extractorParam}${versionParam}`,
-      );
+      const extra: Record<string, string> = {};
+      if (extractor) extra.extractor = extractor;
+      if (versionId != null) extra.version = String(versionId);
+      const resp = await apiFetch(documentRequestUrl('/preview', u, selectedDocumentId, extra));
       if (!resp.ok) {
         content = `<p class="text-hister-rose">Failed to load readable content. Status: ${resp.status}</p>`;
       } else {
@@ -233,7 +248,7 @@
     if (extractorsLoaded || extractorsLoading) return;
     extractorsLoading = true;
     try {
-      const resp = await apiFetch(`/extractors?url=${encodeURIComponent(u)}`);
+      const resp = await apiFetch(documentRequestUrl('/extractors', u, documentId));
       if (resp.ok) {
         const data: { name: string; description: string }[] = await resp.json();
         availableExtractors = data ?? [];
@@ -253,7 +268,7 @@
     }
     if (versions.length === 0) {
       try {
-        const resp = await apiFetch(`/versions?url=${encodeURIComponent(u)}`);
+        const resp = await apiFetch(documentRequestUrl('/versions', u, documentId));
         if (resp.ok) {
           versions = (await resp.json()) ?? [];
         }
@@ -359,7 +374,7 @@
             variant="ghost"
             size="icon-sm"
             class="text-text-brand-muted hover:text-text-brand"
-            href={buildPreviewUrl(url, title || hintTitle, viewingVersion?.id)}
+            href={buildPreviewUrl(url, title || hintTitle, viewingVersion?.id, documentId)}
             target="_blank"
             rel="noopener noreferrer"
             title="Open direct preview"

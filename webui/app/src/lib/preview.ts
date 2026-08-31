@@ -5,27 +5,43 @@ import { base } from '$app/paths';
 
 const previewDetailsOpenStorageKey = 'hister-preview-details-open';
 
-/** Builds the /preview?id=...&title=...&version=... URL for a document. */
-export function buildPreviewUrl(id: string, title: string, versionId?: number | null): string {
+/** Builds the preview page URL for a document. */
+export function buildPreviewUrl(
+  id: string,
+  title: string,
+  versionId?: number | null,
+  documentId?: string,
+): string {
   const versionParam = versionId != null ? `&version=${versionId}` : '';
-  return `${base}/preview?id=${encodeURIComponent(id)}${title ? '&title=' + encodeURIComponent(title) : ''}${versionParam}`;
+  const documentParam = documentId ? `&document_id=${encodeURIComponent(documentId)}` : '';
+  return `${base}/preview?id=${encodeURIComponent(id)}${title ? '&title=' + encodeURIComponent(title) : ''}${versionParam}${documentParam}`;
 }
 
 /** Pushes a preview entry onto the browser history stack. */
-export function pushPreviewHistory(id: string, title: string, versionId?: number | null) {
+export function pushPreviewHistory(
+  id: string,
+  title: string,
+  versionId?: number | null,
+  documentId?: string,
+) {
   history.pushState(
-    { type: 'preview', id, title, versionId: versionId ?? null },
+    { type: 'preview', id, title, versionId: versionId ?? null, documentId: documentId ?? '' },
     '',
-    buildPreviewUrl(id, title, versionId),
+    buildPreviewUrl(id, title, versionId, documentId),
   );
 }
 
 /** Replaces the current browser history entry with a preview entry. */
-export function replacePreviewHistory(id: string, title: string, versionId?: number | null) {
+export function replacePreviewHistory(
+  id: string,
+  title: string,
+  versionId?: number | null,
+  documentId?: string,
+) {
   history.replaceState(
-    { type: 'preview', id, title, versionId: versionId ?? null },
+    { type: 'preview', id, title, versionId: versionId ?? null, documentId: documentId ?? '' },
     '',
-    buildPreviewUrl(id, title, versionId),
+    buildPreviewUrl(id, title, versionId, documentId),
   );
 }
 

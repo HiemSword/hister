@@ -460,6 +460,12 @@ func init() {
 					Required:    true,
 					Description: "URL of the document to retrieve versions for",
 				},
+				{
+					Name:        "document_id",
+					Type:        "string",
+					Required:    false,
+					Description: "Exact document ID when the URL exists under more than one owner",
+				},
 			},
 		},
 		{
@@ -476,6 +482,12 @@ func init() {
 					Type:        "string",
 					Required:    true,
 					Description: "URL of the document",
+				},
+				{
+					Name:        "document_id",
+					Type:        "string",
+					Required:    false,
+					Description: "Exact document ID when the URL exists under more than one owner",
 				},
 			},
 		},
@@ -798,6 +810,12 @@ func init() {
 					Description: "URL of the document to preview",
 				},
 				{
+					Name:        "document_id",
+					Type:        "string",
+					Required:    false,
+					Description: "Exact document ID when the URL exists under more than one owner",
+				},
+				{
 					Name:        "extractor",
 					Type:        "string",
 					Required:    false,
@@ -820,6 +838,12 @@ func init() {
 					Type:        "string",
 					Required:    false,
 					Description: "If provided, return only preview extractors that match this indexed document URL",
+				},
+				{
+					Name:        "document_id",
+					Type:        "string",
+					Required:    false,
+					Description: "Exact document ID when the URL exists under more than one owner",
 				},
 			},
 		},

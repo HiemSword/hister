@@ -714,7 +714,12 @@ func serveVersions(c *webContext) {
 		http.Error(c.Response, "url parameter is required", http.StatusBadRequest)
 		return
 	}
-	versions, err := model.GetDocumentVersions(u, c.UserID)
+	doc := requestedDocument(c, u)
+	if doc == nil {
+		http.Error(c.Response, "document not found", http.StatusNotFound)
+		return
+	}
+	versions, err := model.GetDocumentVersions(u, doc.UserID)
 	if err != nil {
 		log.Error().Err(err).Str("url", u).Msg("failed to get document versions")
 		serve500(c)
@@ -1377,7 +1382,7 @@ func serveGetFacets(c *webContext) {
 
 func serveGet(c *webContext) {
 	u := c.Request.URL.Query().Get("url")
-	doc := c.Indexer.GetByURLAndUser(u, c.UserID)
+	doc := requestedDocument(c, u)
 	if doc == nil {
 		http.Error(c.Response, "document not found", http.StatusNotFound)
 		return
@@ -1390,13 +1395,31 @@ func serveGet(c *webContext) {
 	}
 }
 
+// requestedDocument resolves an optional document ID. Multiuser mode enforces
+// owner isolation. URL only requests retain the legacy behavior of preferring
+// the caller's document over a global document.
+func requestedDocument(c *webContext, u string) *document.Document {
+	id := c.Request.URL.Query().Get("document_id")
+	if id == "" {
+		return c.Indexer.GetByURLAndUser(u, c.UserID)
+	}
+	doc := c.Indexer.GetByDocID(id)
+	if doc == nil || doc.URL != u {
+		return nil
+	}
+	if c.Config.App.UserHandling && doc.UserID != 0 && doc.UserID != c.UserID {
+		return nil
+	}
+	return doc
+}
+
 func servePreview(c *webContext) {
 	u := c.Request.URL.Query().Get("url")
 	extractorName := c.Request.URL.Query().Get("extractor")
 	versionIDStr := c.Request.URL.Query().Get("version")
-	doc := c.Indexer.GetByURLAndUser(u, c.UserID)
+	doc := requestedDocument(c, u)
 	if doc == nil {
-		serve500(c)
+		http.Error(c.Response, "document not found", http.StatusNotFound)
 		return
 	}
 	// If a specific version is requested, reconstruct the older document content
@@ -1405,7 +1428,7 @@ func servePreview(c *webContext) {
 	var viewingVersionCreatedAt time.Time
 	if versionIDStr != "" {
 		if versionID, err := strconv.ParseUint(versionIDStr, 10, 64); err == nil {
-			if versions, err := model.GetDocumentVersionsUntil(u, c.UserID, uint(versionID)); err == nil && len(versions) > 0 {
+			if versions, err := model.GetDocumentVersionsUntil(u, doc.UserID, uint(versionID)); err == nil && len(versions) > 0 {
 				docCopy := *doc
 				for _, v := range versions {
 					docCopy.HTML = applyPatchReverse(v.HTMLDiff, docCopy.HTML)
@@ -1458,7 +1481,7 @@ func servePreview(c *webContext) {
 		payload.VersionID = viewingVersionID
 		payload.VersionCreatedAt = &viewingVersionCreatedAt
 	}
-	if versionCount, err := model.CountDocumentVersions(u, c.UserID); err == nil && versionCount > 0 {
+	if versionCount, err := model.CountDocumentVersions(u, doc.UserID); err == nil && versionCount > 0 {
 		payload.VersionCount = versionCount
 	}
 	if meta := doc.GetPreviewMeta(); meta != nil {
@@ -1608,9 +1631,9 @@ func serveStats(c *webContext) {
 func serveExtractors(c *webContext) {
 	u := c.Request.URL.Query().Get("url")
 	if u != "" {
-		doc := c.Indexer.GetByURLAndUser(u, c.UserID)
+		doc := requestedDocument(c, u)
 		if doc == nil {
-			serve500(c)
+			http.Error(c.Response, "document not found", http.StatusNotFound)
 			return
 		}
 		c.JSON(extractor.ListMatchingPreview(doc))

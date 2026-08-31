@@ -1,5 +1,5 @@
 export interface HistoryItem {
-  id?: number;
+  id?: number | string;
   query: string;
   url: string;
   title: string;

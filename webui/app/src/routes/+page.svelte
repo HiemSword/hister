@@ -121,6 +121,7 @@
   }
 
   interface DisplayResult {
+    id?: string;
     url: string;
     title: string;
     domain: string;
@@ -203,6 +204,7 @@
 
   // Desktop split-pane readability panel state
   let panelUrl = $state('');
+  let panelDocumentId = $state('');
   let panelHintTitle = $state('');
   let panelViewingVersion = $state<number | null>(null);
   let isDesktop = $state(false);
@@ -440,6 +442,7 @@
   });
 
   interface MergedResult {
+    id?: string;
     url: string;
     title: string;
     domain: string;
@@ -794,11 +797,13 @@
     const state = event.state as {
       type?: string;
       id?: string;
+      documentId?: string;
       title?: string;
       versionId?: number | null;
     } | null;
     if (state?.type === 'preview') {
       panelUrl = state.id || '';
+      panelDocumentId = state.documentId || '';
       panelHintTitle = state.title || '';
       panelOpen = true;
       previewFullscreen = true;
@@ -1003,7 +1008,7 @@
 
   // Convert file document URLs to browser viewable Hister URLs.
   function fileResultUrl(url: string, documentID?: string, title = ''): string {
-    if (url.startsWith('remote-file://')) return buildPreviewUrl(url, title);
+    if (url.startsWith('remote-file://')) return buildPreviewUrl(url, title, undefined, documentID);
     if (url.startsWith('file://') && documentID)
       return 'api/file?id=' + encodeURIComponent(documentID);
     return url;
@@ -1018,7 +1023,7 @@
     return withoutDomain || '/';
   }
 
-  function openReadable(e: Event, url: string, title: string) {
+  function openReadable(e: Event, url: string, title: string, documentId = '') {
     e.preventDefault();
     if (e.stopPropagation) e.stopPropagation();
     if (isDesktop) {
@@ -1027,20 +1032,24 @@
         localStorage.setItem('hister-panel-open', 'true');
       }
       panelViewingVersion = null;
+      panelDocumentId = documentId;
       panelHintTitle = title;
       panelUrl = url;
       return;
     }
     panelViewingVersion = null;
+    panelDocumentId = documentId;
     panelUrl = url;
     panelHintTitle = title;
     previewFullscreen = true;
-    withSkipUrl(skipUrl, () => pushPreviewHistory(url, title));
+    withSkipUrl(skipUrl, () => pushPreviewHistory(url, title, null, documentId));
   }
 
   function enterFullscreen() {
     previewFullscreen = true;
-    withSkipUrl(skipUrl, () => pushPreviewHistory(panelUrl, panelHintTitle, panelViewingVersion));
+    withSkipUrl(skipUrl, () =>
+      pushPreviewHistory(panelUrl, panelHintTitle, panelViewingVersion, panelDocumentId),
+    );
   }
 
   function exitFullscreen() {
@@ -1119,6 +1128,7 @@
         { preventDefault: () => {}, stopPropagation: () => {} } as unknown as Event,
         link.getAttribute('data-result-link')!,
         link.innerText,
+        el.getAttribute('data-document-id') || '',
       );
     }
   }
@@ -1565,16 +1575,19 @@
     if (!isDesktop || (!panelOpen && !isFullscreen)) return;
     if (!result) {
       panelUrl = '';
+      panelDocumentId = '';
       panelHintTitle = '';
       return;
     }
     const url = result.url;
-    if (url === untrack(() => panelUrl)) return;
+    const documentId = result.id || '';
+    if (url === untrack(() => panelUrl) && documentId === untrack(() => panelDocumentId)) return;
     panelViewingVersion = null;
+    panelDocumentId = documentId;
     panelHintTitle = result.title || '';
     panelUrl = url;
     if (isFullscreen) {
-      withSkipUrl(skipUrl, () => replacePreviewHistory(url, result.title || '', null));
+      withSkipUrl(skipUrl, () => replacePreviewHistory(url, result.title || '', null, documentId));
     }
   });
   $effect(() => {
@@ -2540,11 +2553,12 @@
                               data-readable
                               variant="link"
                               size="sm"
-                              href={buildPreviewUrl(r.url, r.title || '*title*')}
+                              href={buildPreviewUrl(r.url, r.title || '*title*', undefined, r.id)}
+                              data-document-id={r.id || ''}
                               class="text-text-brand-muted hover:text-hister-indigo h-auto shrink-0 cursor-pointer gap-0.5 p-0 text-xs font-medium md:text-sm"
                               onclick={(e) => {
                                 highlightIdx = i;
-                                openReadable(e, r.url, r.title || '*title*');
+                                openReadable(e, r.url, r.title || '*title*', r.id || '');
                               }}
                             >
                               <Eye class="size-3" /><span>view</span>
@@ -2616,6 +2630,7 @@
         {#if previewFullscreen}
           <PreviewPanel
             url={panelUrl}
+            documentId={panelDocumentId}
             hintTitle={panelHintTitle}
             fullscreen={true}
             onclose={closePanelAndFullscreen}
@@ -2623,7 +2638,9 @@
             initialViewingVersionId={panelViewingVersion}
             onviewingversionchange={(id) => {
               panelViewingVersion = id;
-              withSkipUrl(skipUrl, () => replacePreviewHistory(panelUrl, panelHintTitle, id));
+              withSkipUrl(skipUrl, () =>
+                replacePreviewHistory(panelUrl, panelHintTitle, id, panelDocumentId),
+              );
             }}
           />
         {:else if lastResults && panelOpen && isDesktop}
@@ -2641,6 +2658,7 @@
           >
             <PreviewPanel
               url={panelUrl}
+              documentId={panelDocumentId}
               hintTitle={panelHintTitle}
               fullscreen={false}
               onclose={() => {

@@ -8,12 +8,14 @@
   import { base } from '$app/paths';
 
   let docUrl = $state('');
+  let documentId = $state('');
   let docTitle = $state('');
   let panelVersionId = $state<number | null>(null);
 
   function readParams() {
     const params = new URLSearchParams(window.location.search);
     docUrl = params.get('id') || '';
+    documentId = params.get('document_id') || '';
     docTitle = params.get('title') || '';
     const v = params.get('version');
     panelVersionId = v ? parseInt(v, 10) || null : null;
@@ -34,12 +36,13 @@
   {#if docUrl}
     <PreviewPanel
       url={docUrl}
+      {documentId}
       hintTitle={docTitle}
       fullscreen={true}
       initialViewingVersionId={panelVersionId}
       onviewingversionchange={(id) => {
         panelVersionId = id;
-        replacePreviewHistory(docUrl, docTitle, id);
+        replacePreviewHistory(docUrl, docTitle, id, documentId);
       }}
       onclose={() => {
         try {

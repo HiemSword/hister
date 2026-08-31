@@ -98,6 +98,7 @@
   // Preview state
   let isDesktop = $state(false);
   let panelUrl = $state('');
+  let panelDocumentId = $state('');
   let panelHintTitle = $state('');
   let panelViewingVersion = $state<number | null>(null);
   let panelOpen = $state(
@@ -154,27 +155,35 @@
     return () => mq.removeEventListener('change', handler);
   });
 
-  function openPreview(url: string, title: string) {
+  function historyDocumentId(item: HistoryItem): string {
+    return typeof item.id === 'string' ? item.id : '';
+  }
+
+  function openPreview(url: string, title: string, documentId = '') {
     if (isDesktop) {
       if (!panelOpen) {
         panelOpen = true;
         localStorage.setItem('hister-history-panel-open', 'true');
       }
       panelViewingVersion = null;
+      panelDocumentId = documentId;
       panelHintTitle = title;
       panelUrl = url;
       return;
     }
     panelViewingVersion = null;
+    panelDocumentId = documentId;
     panelUrl = url;
     panelHintTitle = title;
     previewFullscreen = true;
-    withSkipUrl(skipUrl, () => pushPreviewHistory(url, title));
+    withSkipUrl(skipUrl, () => pushPreviewHistory(url, title, null, documentId));
   }
 
   function enterFullscreen() {
     previewFullscreen = true;
-    withSkipUrl(skipUrl, () => pushPreviewHistory(panelUrl, panelHintTitle, panelViewingVersion));
+    withSkipUrl(skipUrl, () =>
+      pushPreviewHistory(panelUrl, panelHintTitle, panelViewingVersion, panelDocumentId),
+    );
   }
 
   function exitFullscreen() {
@@ -193,11 +202,13 @@
     const state = event.state as {
       type?: string;
       id?: string;
+      documentId?: string;
       title?: string;
       versionId?: number | null;
     } | null;
     if (state?.type === 'preview') {
       panelUrl = state.id || '';
+      panelDocumentId = state.documentId || '';
       panelHintTitle = state.title || '';
       panelOpen = true;
       previewFullscreen = true;
@@ -631,7 +642,7 @@
 
   function historyResultUrl(item: HistoryItem): string {
     if (item.url.startsWith('remote-file://')) {
-      return buildPreviewUrl(item.url, item.title || item.url);
+      return buildPreviewUrl(item.url, item.title || item.url, undefined, historyDocumentId(item));
     }
     return item.url;
   }
@@ -646,13 +657,13 @@
       } else if (panelOpen) {
         enterFullscreen();
       } else {
-        openPreview(item.url, item.title || item.url);
+        openPreview(item.url, item.title || item.url, historyDocumentId(item));
       }
     } else {
       if (previewFullscreen) {
         closePanelAndFullscreen();
       } else {
-        openPreview(item.url, item.title || item.url);
+        openPreview(item.url, item.title || item.url, historyDocumentId(item));
       }
     }
   }
@@ -701,12 +712,17 @@
     if (!isDesktop || !items.length || (!panelOpen && !isFullscreen)) return;
     const item = items[idx];
     if (!item) return;
-    if (untrack(() => panelUrl) === item.url) return;
+    const documentId = historyDocumentId(item);
+    if (untrack(() => panelUrl) === item.url && untrack(() => panelDocumentId) === documentId)
+      return;
     panelViewingVersion = null;
+    panelDocumentId = documentId;
     panelHintTitle = item.title || item.url;
     panelUrl = item.url;
     if (isFullscreen) {
-      withSkipUrl(skipUrl, () => replacePreviewHistory(item.url, item.title || item.url, null));
+      withSkipUrl(skipUrl, () =>
+        replacePreviewHistory(item.url, item.title || item.url, null, documentId),
+      );
     }
   });
 </script>
@@ -1037,7 +1053,11 @@
                             title="Preview"
                             onclick={() => {
                               highlightIdx = flatIdx;
-                              openPreview(item.url, item.title || item.url);
+                              openPreview(
+                                item.url,
+                                item.title || item.url,
+                                historyDocumentId(item),
+                              );
                             }}
                           >
                             <Eye class="size-3.5" />
@@ -1074,6 +1094,7 @@
         {#if previewFullscreen}
           <PreviewPanel
             url={panelUrl}
+            documentId={panelDocumentId}
             hintTitle={panelHintTitle}
             fullscreen={true}
             onclose={closePanelAndFullscreen}
@@ -1081,7 +1102,9 @@
             initialViewingVersionId={panelViewingVersion}
             onviewingversionchange={(id) => {
               panelViewingVersion = id;
-              withSkipUrl(skipUrl, () => replacePreviewHistory(panelUrl, panelHintTitle, id));
+              withSkipUrl(skipUrl, () =>
+                replacePreviewHistory(panelUrl, panelHintTitle, id, panelDocumentId),
+              );
             }}
           />
         {:else if panelOpen && isDesktop}
@@ -1099,6 +1122,7 @@
           >
             <PreviewPanel
               url={panelUrl}
+              documentId={panelDocumentId}
               hintTitle={panelHintTitle}
               fullscreen={false}
               onclose={() => {
