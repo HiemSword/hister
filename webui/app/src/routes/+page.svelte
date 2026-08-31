@@ -9,6 +9,7 @@
   } from '$lib/preview';
   import { page } from '$app/stores';
   import { base } from '$app/paths';
+  import { beforeNavigate } from '$app/navigation';
   import {
     WebSocketManager,
     KeyHandler,
@@ -186,6 +187,7 @@
   type ConnectionState = 'connecting' | 'connected' | 'disconnected';
   let connectionState = $state<ConnectionState>('connecting');
   let connected = $state(false);
+  let unloading = false;
   let lastResults = $state<SearchResults | null>(null);
   let accumulatedDocs = $state<SearchResult[]>([]);
   let pageKey = $state('');
@@ -705,16 +707,26 @@
       },
       onMessage: renderResults,
       onClose: () => {
+        if (unloading) return;
         connected = false;
         connectionState = 'disconnected';
       },
       onError: () => {
+        if (unloading) return;
         connected = false;
         connectionState = 'disconnected';
       },
     });
     wsManager.connect();
   }
+
+  beforeNavigate(({ willUnload, complete }) => {
+    if (!willUnload) return;
+    unloading = true;
+    complete.catch(() => {
+      unloading = false;
+    });
+  });
 
   function retryConnection() {
     connected = false;
