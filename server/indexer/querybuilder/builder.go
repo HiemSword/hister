@@ -1,6 +1,7 @@
 package querybuilder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -292,9 +293,12 @@ func buildURLRegexpQuery(field searchschema.FieldDefinition, pattern string) que
 	}
 	return query.NewCustomFilterQueryWithFilter(
 		query.NewMatchAllQuery(),
-		func(match *search.DocumentMatch) bool {
+		func(ctx context.Context, match *search.DocumentMatch) (bool, error) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
 			urlValue, ok := match.Fields[field.IndexField].(string)
-			return ok && re.MatchString(urlValue)
+			return ok && re.MatchString(urlValue), nil
 		},
 		[]string{field.IndexField},
 		nil,
