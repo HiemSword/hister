@@ -568,7 +568,7 @@ Hister is configured via a YAML file. It selects a primary config path using thi
 
 If the selected primary path does not exist, Hister searches the platform paths below and uses the first config file it finds.
 
-### Default Config Locations
+## Default Config Locations
 
 **Linux** (respects `$XDG_CONFIG_HOME`):
 
@@ -592,7 +592,7 @@ If the selected primary path does not exist, Hister searches the platform paths 
 
 If you have a legacy `~/.histerrc` file and Hister finds it, you'll see a deprecation warning suggesting you move it to the recommended location.
 
-### Creating a Config File
+## Creating a Config File
 
 Generate a config file with default values:
 
@@ -620,6 +620,29 @@ hister listen --config /path/to/my/config.yml
 ```
 
 **Important**: Restart the Hister server after modifying the configuration file.
+
+## Environment Variables
+
+You can override configuration values using environment variables. The naming convention is:
+
+```textplain
+HISTER__<SECTION>__<KEY>=value
+```
+
+For example:
+
+- `HISTER__APP__LOG_LEVEL=debug` overrides `app.log_level`
+- `HISTER__APP__LOG_FORMAT=json` overrides `app.log_format`
+- `HISTER__APP__LOG_FILE=/var/log/hister.log` overrides `app.log_file`
+- `HISTER__SERVER__ADDRESS=0.0.0.0:8080` overrides `server.address`
+
+Three special purpose variables are also supported:
+
+| Variable          | Description                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `HISTER_CONFIG`   | Select a config file when `--config` is not supplied                         |
+| `HISTER_PORT`     | Override the port only while keeping the existing host from `server.address` |
+| `HISTER_DATA_DIR` | Override `app.directory`                                                     |
 
 ## Full Configuration
 
@@ -1182,26 +1205,3 @@ sensitive_content_patterns:
 ```
 
 Default patterns cover common secrets: AWS keys, GitHub tokens, SSH/PGP private keys.
-
-## Environment Variables
-
-You can override configuration values using environment variables. The naming convention is:
-
-```textplain
-HISTER__<SECTION>__<KEY>=value
-```
-
-For example:
-
-- `HISTER__APP__LOG_LEVEL=debug` overrides `app.log_level`
-- `HISTER__APP__LOG_FORMAT=json` overrides `app.log_format`
-- `HISTER__APP__LOG_FILE=/var/log/hister.log` overrides `app.log_file`
-- `HISTER__SERVER__ADDRESS=0.0.0.0:8080` overrides `server.address`
-
-Three special purpose variables are also supported:
-
-| Variable          | Description                                                                  |
-| ----------------- | ---------------------------------------------------------------------------- |
-| `HISTER_CONFIG`   | Select a config file when `--config` is not supplied                         |
-| `HISTER_PORT`     | Override the port only while keeping the existing host from `server.address` |
-| `HISTER_DATA_DIR` | Override `app.directory`                                                     |
