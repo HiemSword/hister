@@ -3,19 +3,23 @@
   import * as Card from '@hister/components/ui/card';
   import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert';
 
+  type ConfigScope = 'client' | 'server';
+
   interface ConfigReferenceItem {
     name: string;
     type: string;
     defaultValue?: string;
     requirement?: string;
     description: string;
+    scopes?: ConfigScope[];
   }
 
-  let { items }: { items: ConfigReferenceItem[] } = $props();
+  let { items, scopes = [] }: { items: ConfigReferenceItem[]; scopes?: ConfigScope[] } = $props();
 </script>
 
 <div class="mb-7 flex flex-col gap-4">
   {#each items as item (item.name)}
+    {@const optionScopes = item.scopes ?? scopes}
     <Card.Root
       aria-labelledby="config-option-{item.name}"
       color="hister-indigo"
@@ -32,12 +36,27 @@
             >{item.name}</code
           >
         </Card.Title>
-        <Badge
-          variant="outline"
-          class="font-space shrink-0 border-(--brutal-bg) bg-transparent text-[9px] font-semibold tracking-[1.25px] text-(--brutal-bg) uppercase opacity-70"
-        >
-          Config option
-        </Badge>
+        {#if optionScopes.length > 0}
+          <div class="flex shrink-0 flex-wrap justify-end gap-1.5">
+            {#each optionScopes as scope (scope)}
+              <Badge
+                variant="outline"
+                class={scope === 'server'
+                  ? 'font-space border-hister-amber text-hister-amber bg-transparent text-[9px] font-bold tracking-[1.25px] uppercase'
+                  : 'font-space border-hister-cyan text-hister-cyan bg-transparent text-[9px] font-bold tracking-[1.25px] uppercase'}
+              >
+                {scope}
+              </Badge>
+            {/each}
+          </div>
+        {:else}
+          <Badge
+            variant="outline"
+            class="font-space shrink-0 border-(--brutal-bg) bg-transparent text-[9px] font-semibold tracking-[1.25px] text-(--brutal-bg) uppercase opacity-70"
+          >
+            Config option
+          </Badge>
+        {/if}
       </Card.Header>
 
       <Card.Content class="px-5 py-4">

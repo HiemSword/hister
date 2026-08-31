@@ -13,102 +13,119 @@ description: 'Explore every configuration section, option, default value, enviro
       name: 'directory',
       type: 'string',
       defaultValue: 'platform default',
+      scopes: ['server', 'client'],
       description: 'Directory where Hister stores its data, including the index, rules, and secret key.',
     },
     {
       name: 'title',
       type: 'string',
       defaultValue: 'Hister',
+      scopes: ['server'],
       description: 'Main title shown on the web UI home page.',
     },
     {
       name: 'subtitle',
       type: 'string',
       defaultValue: 'Your own search engine',
+      scopes: ['server'],
       description: 'Secondary title shown below the main title on the web UI home page. Set it to an empty string to hide it.',
     },
     {
       name: 'color_scheme',
       type: 'string',
       defaultValue: 'automatic',
+      scopes: ['server'],
       description: 'Default web UI color scheme. Supported values are automatic, dark, and light. Visitors can override this default from the appearance menu.',
     },
     {
       name: 'search_url',
       type: 'string',
       defaultValue: 'https://google.com/search?q={query}',
+      scopes: ['server'],
       description: 'Fallback web search URL. Use {query} as the placeholder for the search term.',
     },
     {
       name: 'access_token',
       type: 'string',
       defaultValue: '(none)',
+      scopes: ['server', 'client'],
       description: 'Optional access token for securing the API. See the Access Token section below.',
     },
     {
       name: 'user_handling',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server', 'client'],
       description: 'Enables multiple user mode. See the User Handling documentation for details.',
     },
     {
       name: 'public',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server', 'client'],
       description: 'Allows unauthenticated users to search public documents, use API docs, MCP search, previews, and file serving. Requires access_token or user_handling.',
     },
     {
       name: 'log_level',
       type: 'string',
       defaultValue: 'info',
+      scopes: ['server', 'client'],
       description: 'Log verbosity. Supported values are error, warning, info, debug, and trace. The err and warn aliases are also accepted.',
     },
     {
       name: 'log_format',
       type: 'string',
       defaultValue: 'text',
+      scopes: ['server', 'client'],
       description: 'Log output format. Text emits colored human readable lines. JSON emits one object per entry for log aggregators.',
     },
     {
       name: 'log_file',
       type: 'string',
       defaultValue: '(none)',
+      scopes: ['server', 'client'],
       description: 'Path to a log file. Hister creates or appends to this file instead of writing logs to standard error.',
     },
     {
       name: 'debug_sql',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server'],
       description: 'Enables verbose SQL query logging.',
     },
     {
       name: 'open_results_on_new_tab',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server'],
       description: 'Opens search results in a new browser tab instead of the current tab.',
     },
     {
       name: 'redirect_on_no_results',
       type: 'bool',
       defaultValue: 'true',
+      scopes: ['server'],
       description: 'Redirects to the configured search_url when a query returns no results. Disable it to remain within Hister.',
     },
     {
       name: 'display_extractor_config',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server'],
       description: 'Includes extractor option definitions in the extractor API response so clients can display configuration details.',
     },
     {
       name: 'disable_previews',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server'],
       description: 'Disables the preview panel and prevents HTML storage. See the Disable Previews section below.',
     },
     {
       name: 'profiler',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server'],
       description: 'Serves the Go runtime profiling endpoints under /debug/pprof, behind the same authentication as the rest of the API.',
     },
   ];
@@ -124,6 +141,7 @@ description: 'Explore every configuration section, option, default value, enviro
       name: 'base_url',
       type: 'string',
       defaultValue: 'derived from address',
+      scopes: ['server', 'client'],
       description: 'Public URL of the Hister instance. It is required when address uses 0.0.0.0 and must match how you access Hister.',
     },
     {
@@ -190,6 +208,7 @@ description: 'Explore every configuration section, option, default value, enviro
       name: 'keep_stopwords',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server'],
       description: 'Preserves stop words while retaining language analysis. Changing this setting requires reindexing.',
     },
     {
@@ -248,12 +267,14 @@ description: 'Explore every configuration section, option, default value, enviro
       name: 'delete_on_remove',
       type: 'bool',
       defaultValue: 'false',
+      scopes: ['server'],
       description: 'Automatically removes a file from the index when it is deleted or renamed.',
     },
     {
       name: 'user',
       type: 'string',
       defaultValue: '""',
+      scopes: ['server'],
       description: 'Username that owns files in this directory. Leave it empty for global access.',
     },
   ];
@@ -614,13 +635,15 @@ To create the configuration file directly, pass its destination path:
 hister create-config /path/to/config.yml
 ```
 
+Each option below has one or both scope tags. The `server` tag marks settings used by the Hister server, its index, or the web interface it serves. The `client` tag marks settings used by command line operations or the terminal interface on the machine where they run. If your client and server use separate configuration files, add a setting to each tagged side where you need its behavior.
+
 ## `app` Section
 
 <ConfigReference items={appOptions} />
 
 ## `server` Section
 
-<ConfigReference items={serverOptions} />
+<ConfigReference items={serverOptions} scopes={['server']} />
 
 ## Database Backends
 
@@ -655,19 +678,19 @@ Semantic search is **opt-in** and disabled by default. It requires an OpenAI-com
 
 ### Connection and Model
 
-<ConfigReference items={semanticConnectionOptions} />
+<ConfigReference items={semanticConnectionOptions} scopes={['server']} />
 
 ### Chunking and Input
 
-<ConfigReference items={semanticInputOptions} />
+<ConfigReference items={semanticInputOptions} scopes={['server']} />
 
 ### Retrieval
 
-<ConfigReference items={semanticRetrievalOptions} />
+<ConfigReference items={semanticRetrievalOptions} scopes={['server']} />
 
 ### Processing
 
-<ConfigReference items={semanticProcessingOptions} />
+<ConfigReference items={semanticProcessingOptions} scopes={['server']} />
 
 ### Vector Storage Backends
 
@@ -706,19 +729,19 @@ TUI settings are configured in a separate `tui.yaml` file located in the same di
 
 ### Theme Settings
 
-<ConfigReference items={tuiThemeOptions} />
+<ConfigReference items={tuiThemeOptions} scopes={['client']} />
 
 **Built-in themes**: catppuccin-frappe, catppuccin-latte, catppuccin-macchiato, catppuccin-mocha, dracula, gruvbox, gruvbox-light, material-lighter, nord, nord-light, one-light, rose-pine, rose-pine-dawn, solarized-light, tokyonight, and tomorrow.
 
 ## `indexer` Section
 
-<ConfigReference items={indexerOptions} />
+<ConfigReference items={indexerOptions} scopes={['server', 'client']} />
 
 ### Directory Entry
 
 Each entry in `directories` is an object with the following keys:
 
-<ConfigReference items={directoryOptions} />
+<ConfigReference items={directoryOptions} scopes={['server', 'client']} />
 
 When multiple filters are specified, they are applied in order: excludes first, then filetypes, then patterns. A file must pass all specified filters to be indexed. When a filter is omitted, it is not applied (all files pass).
 
@@ -859,7 +882,7 @@ The `server.oauth` key is a map where each key is a provider name and the value 
 
 Each entry supports the following fields:
 
-<ConfigReference items={oauthOptions} />
+<ConfigReference items={oauthOptions} scopes={['server']} />
 
 ### GitHub Example
 
@@ -1051,7 +1074,7 @@ the same backend and request settings.
 Every recursive crawl runs as a persistent job so it can be interrupted and resumed
 without losing progress. See [Website Crawler](crawler) for usage details.
 
-<ConfigReference items={crawlerOptions} />
+<ConfigReference items={crawlerOptions} scopes={['client']} />
 
 Set `proxy` to an `http://` or `socks5://` URL. The HTTP backend uses it as its transport proxy,
 Chromedp passes it to the browser process, and BiDi requests it when creating the browser session.
@@ -1077,7 +1100,7 @@ The `backend_options` map passes configuration to the selected backend. Each bac
 
 **`chromedp` backend**:
 
-<ConfigReference items={chromedpOptions} />
+<ConfigReference items={chromedpOptions} scopes={['client']} />
 
 ```yaml
 crawler:
@@ -1092,7 +1115,7 @@ crawler:
 
 Connects to an **already-running** browser that exposes a [WebDriver BiDi](https://w3c.github.io/webdriver-bidi/) WebSocket endpoint. This is the W3C-standard automation protocol supported by Firefox (≥ 102), Chrome (≥ 106), Edge, and other modern browsers. Unlike `chromedp`, the `bidi` backend does **not** launch a browser process — it reuses one you have started yourself (headless or not).
 
-<ConfigReference items={bidiOptions} />
+<ConfigReference items={bidiOptions} scopes={['client']} />
 
 Start your browser with BiDi enabled, for example:
 
@@ -1129,7 +1152,7 @@ crawler:
 
 Each entry in `cookies` is an object with the following keys:
 
-<ConfigReference items={crawlerCookieOptions} />
+<ConfigReference items={crawlerCookieOptions} scopes={['client']} />
 
 ### Full Crawler Example
 
