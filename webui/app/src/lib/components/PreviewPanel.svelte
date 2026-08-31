@@ -2,9 +2,19 @@
 <script lang="ts">
   import VideoPreview from './VideoPreview.svelte';
   import { apiFetch } from '$lib/api';
-  import { buildPreviewUrl } from '$lib/preview';
+  import {
+    buildPreviewUrl,
+    getStoredPreviewDetailsOpen,
+    setStoredPreviewDetailsOpen,
+  } from '$lib/preview';
   import { formatTimestamp, formatMetaDate } from '$lib/search';
-  import type { DocumentVersion } from '$lib/types';
+  import type {
+    DocumentPreviewResponse,
+    DocumentVersion,
+    EmbeddedVideo,
+    PreviewDocumentDetails,
+    PreviewMetadata,
+  } from '$lib/types';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
   import { Button } from '@hister/components/ui/button';
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
@@ -16,9 +26,10 @@
     History,
     MoreVertical,
     ExternalLink,
+    Info,
     Video,
   } from '@lucide/svelte';
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
 
   interface Props {
     url: string;
@@ -46,7 +57,8 @@
   let content = $state('');
   let template = $state('');
   let templateData = $state<any>(null);
-  let meta = $state<Record<string, any> | null>(null);
+  let meta = $state<PreviewMetadata | null>(null);
+  let documentDetails = $state<PreviewDocumentDetails | null>(null);
   let added = $state<number | null>(null);
   let updated = $state<number | null>(null);
   let loading = $state(false);
@@ -59,13 +71,48 @@
   let extractorsLoaded = $state(false);
   let extractorsLoading = $state(false);
 
-  interface EmbeddedVideo {
-    url: string;
-    type: 'iframe' | 'video' | 'embed' | 'object';
-    mime?: string;
+  let showEmbeddedVideos = $state(false);
+  let showDocumentDetails = $state(false);
+
+  type DetailEntry = { field: string; value: unknown };
+
+  let documentDetailEntries = $derived.by((): DetailEntry[] => {
+    if (!documentDetails) return [];
+    return [
+      { field: 'type', value: documentDetails.type },
+      { field: 'language', value: documentDetails.language },
+      { field: 'label', value: documentDetails.label },
+      { field: 'visits', value: documentDetails.visits },
+      { field: 'user_id', value: documentDetails.user_id },
+    ];
+  });
+
+  let documentMetadataEntries = $derived.by((): DetailEntry[] =>
+    Object.entries(documentDetails?.metadata ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => ({ field: `metadata.${key}`, value })),
+  );
+
+  onMount(() => {
+    showDocumentDetails = getStoredPreviewDetailsOpen();
+  });
+
+  function toggleDocumentDetails() {
+    showDocumentDetails = !showDocumentDetails;
+    setStoredPreviewDetailsOpen(showDocumentDetails);
   }
 
-  let showEmbeddedVideos = $state(false);
+  function formatTechnicalValue(value: unknown): string {
+    if (typeof value === 'string') return value === '' ? '""' : value;
+    if (value === undefined) return 'Not set';
+    const encoded = JSON.stringify(value, null, 2);
+    return encoded ?? String(value);
+  }
+
+  function formatDocumentDetailValue(entry: DetailEntry): string {
+    if (entry.value === '' || entry.value === null || entry.value === undefined) return 'Not set';
+    return formatTechnicalValue(entry.value);
+  }
 
   function parseTemplateData(c: string): any | null {
     try {
@@ -133,6 +180,7 @@
     content = '';
     template = '';
     templateData = null;
+    documentDetails = null;
     showEmbeddedVideos = false;
     showVersions = false;
     viewingVersion = null;
@@ -153,7 +201,7 @@
       if (!resp.ok) {
         content = `<p class="text-hister-rose">Failed to load readable content. Status: ${resp.status}</p>`;
       } else {
-        const data = await resp.json();
+        const data = (await resp.json()) as DocumentPreviewResponse;
         template = data.template || '';
         templateData = template === 'video' ? parseTemplateData(data.content) : null;
         content = template === 'video' ? '' : data.content || '<p>No content available</p>';
@@ -162,8 +210,9 @@
         added = data.added ?? null;
         updated = data.updated ?? null;
         meta = data.meta ?? null;
+        documentDetails = data.details;
         versionCount = data.version_count ?? 0;
-        if (data.version_id) {
+        if (data.version_id && data.version_created_at) {
           viewingVersion = {
             id: data.version_id,
             created_at: data.version_created_at,
@@ -258,19 +307,8 @@
     <div
       class="preview-header border-border-brand-muted flex shrink-0 flex-col gap-0.5 border-b-[2px] px-4 py-2.5"
     >
-      <div class="flex items-start gap-2">
-        <h2
-          class="font-outfit text-text-brand line-clamp-2 min-w-0 flex-1 text-lg leading-snug font-bold md:text-3xl"
-        >
-          {#if url.startsWith('remote-file://')}
-            {title}
-          {:else}
-            <a href={url} target="_blank" rel="noopener noreferrer" class="hover:underline"
-              >{title}</a
-            >
-          {/if}
-        </h2>
-        <div class="mt-1 flex shrink-0 items-center gap-1">
+      <div class="flow-root max-h-[6.875em] overflow-hidden text-lg leading-snug md:text-3xl">
+        <div class="float-right mt-1 ml-2 flex items-center gap-1 text-sm leading-normal">
           <DropdownMenu.Root
             onOpenChange={(open) => {
               if (open) loadExtractors(url);
@@ -329,6 +367,22 @@
           >
             <ExternalLink class="size-4" />
           </Button>
+          {#if documentDetails}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class={showDocumentDetails
+                ? 'text-hister-teal hover:text-hister-teal'
+                : 'text-text-brand-muted hover:text-text-brand'}
+              onclick={toggleDocumentDetails}
+              title={showDocumentDetails ? 'Hide document details' : 'Show document details'}
+              aria-label={showDocumentDetails ? 'Hide document details' : 'Show document details'}
+              aria-expanded={showDocumentDetails}
+              aria-controls="preview-document-details"
+            >
+              <Info class="size-4" />
+            </Button>
+          {/if}
           {#if onfullscreentoggle}
             <Button
               variant="ghost"
@@ -348,6 +402,15 @@
             <X class="size-4" />
           </Button>
         </div>
+        <h2 class="font-outfit text-text-brand font-bold">
+          {#if url.startsWith('remote-file://')}
+            {title}
+          {:else}
+            <a href={url} target="_blank" rel="noopener noreferrer" class="hover:underline"
+              >{title}</a
+            >
+          {/if}
+        </h2>
       </div>
       {#if meta?.author || meta?.published || meta?.type}
         <span class="font-inter text-text-brand-muted text-xs">
@@ -395,8 +458,53 @@
         >
           <Video class="size-3.5 shrink-0" />
           {showEmbeddedVideos ? 'Hide' : 'Show'} embedded
-          {(meta.videos as EmbeddedVideo[]).length === 1 ? 'video' : 'videos'}
+          {meta.videos.length === 1 ? 'video' : 'videos'}
         </button>
+      {/if}
+      {#if showDocumentDetails && documentDetails}
+        <div
+          id="preview-document-details"
+          class="border-border-brand-muted mt-2 max-h-[min(20rem,40vh)] overflow-y-auto overscroll-contain border-t pt-2"
+        >
+          <p
+            class="font-outfit text-text-brand-muted mb-1 text-xs font-bold tracking-widest uppercase"
+          >
+            Current document properties
+          </p>
+          <dl class="font-inter text-xs">
+            {#each documentDetailEntries as entry (entry.field)}
+              <div
+                class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
+              >
+                <dt><code class="text-hister-teal break-all">{entry.field}</code></dt>
+                <dd class="text-text-brand-secondary min-w-0 break-all whitespace-pre-wrap">
+                  {formatDocumentDetailValue(entry)}
+                </dd>
+              </div>
+            {/each}
+          </dl>
+          <p
+            class="font-outfit text-text-brand-muted mt-3 mb-1 text-xs font-bold tracking-widest uppercase"
+          >
+            Metadata
+          </p>
+          {#if documentMetadataEntries.length}
+            <dl class="font-inter text-xs">
+              {#each documentMetadataEntries as entry (entry.field)}
+                <div
+                  class="border-border-brand-muted grid gap-1 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] sm:gap-3"
+                >
+                  <dt><code class="text-hister-teal break-all">{entry.field}</code></dt>
+                  <dd class="text-text-brand-secondary min-w-0 break-all whitespace-pre-wrap">
+                    {formatTechnicalValue(entry.value)}
+                  </dd>
+                </div>
+              {/each}
+            </dl>
+          {:else}
+            <p class="font-inter text-text-brand-muted text-xs">No metadata stored.</p>
+          {/if}
+        </div>
       {/if}
     </div>
     {#if viewingVersion}

@@ -1435,22 +1435,34 @@ func servePreview(c *webContext) {
 			return
 		}
 	}
-	payload := map[string]any{
-		"title":    doc.Title,
-		"content":  resp.Content,
-		"template": resp.Template,
-		"added":    doc.Added,
-		"updated":  doc.Updated,
+	metadata := doc.Metadata
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	payload := types.DocumentPreviewResponse{
+		Title:    doc.Title,
+		Content:  resp.Content,
+		Template: resp.Template,
+		Added:    doc.Added,
+		Updated:  doc.Updated,
+		Details: types.PreviewDocumentDetails{
+			Type:     doc.Type.String(),
+			Language: doc.Language,
+			Label:    doc.Label,
+			Visits:   doc.AddCount,
+			UserID:   doc.UserID,
+			Metadata: metadata,
+		},
 	}
 	if viewingVersionID > 0 {
-		payload["version_id"] = viewingVersionID
-		payload["version_created_at"] = viewingVersionCreatedAt
+		payload.VersionID = viewingVersionID
+		payload.VersionCreatedAt = &viewingVersionCreatedAt
 	}
 	if versionCount, err := model.CountDocumentVersions(u, c.UserID); err == nil && versionCount > 0 {
-		payload["version_count"] = versionCount
+		payload.VersionCount = versionCount
 	}
 	if meta := doc.GetPreviewMeta(); meta != nil {
-		payload["meta"] = meta
+		payload.Meta = meta
 	}
 	c.JSON(payload)
 }

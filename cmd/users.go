@@ -159,14 +159,14 @@ var updateUserCmd = &cobra.Command{
 func promptConfirmedPassword(passwordPrompt, confirmationPrompt string) (string, error) {
 	password, err := promptPassword(passwordPrompt)
 	if err != nil {
-		return "", fmt.Errorf("Failed to read password: %w", err)
+		return "", fmt.Errorf("failed to read password: %w", err)
 	}
 	if len(password) < 8 {
 		return "", errors.New("password must be at least 8 characters long")
 	}
 	confirmation, err := promptPassword(confirmationPrompt)
 	if err != nil {
-		return "", fmt.Errorf("Failed to read password: %w", err)
+		return "", fmt.Errorf("failed to read password: %w", err)
 	}
 	if password != confirmation {
 		return "", errors.New("passwords do not match")

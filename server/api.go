@@ -789,7 +789,7 @@ func init() {
 			CSRFRequired: false,
 			Public:       true,
 			Handler:      servePreview,
-			Description:  "Render a readable preview of a stored document",
+			Description:  "Render a readable preview and return the searchable properties of a stored document",
 			Args: []*EndpointArg{
 				{
 					Name:        "url",

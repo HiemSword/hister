@@ -3,6 +3,8 @@
 import { tick } from 'svelte';
 import { base } from '$app/paths';
 
+const previewDetailsOpenStorageKey = 'hister-preview-details-open';
+
 /** Builds the /preview?id=...&title=...&version=... URL for a document. */
 export function buildPreviewUrl(id: string, title: string, versionId?: number | null): string {
   const versionParam = versionId != null ? `&version=${versionId}` : '';
@@ -25,6 +27,16 @@ export function replacePreviewHistory(id: string, title: string, versionId?: num
     '',
     buildPreviewUrl(id, title, versionId),
   );
+}
+
+/** Returns whether document details should be expanded in preview panels. */
+export function getStoredPreviewDetailsOpen(): boolean {
+  return localStorage.getItem(previewDetailsOpenStorageKey) === 'true';
+}
+
+/** Persists the document details disclosure preference across preview panels. */
+export function setStoredPreviewDetailsOpen(open: boolean): void {
+  localStorage.setItem(previewDetailsOpenStorageKey, String(open));
 }
 
 /**
