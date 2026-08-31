@@ -2,12 +2,22 @@
 <script lang="ts">
   import VideoPreview from './VideoPreview.svelte';
   import { apiFetch } from '$lib/api';
+  import { buildPreviewUrl } from '$lib/preview';
   import { formatTimestamp, formatMetaDate } from '$lib/search';
   import type { DocumentVersion } from '$lib/types';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
   import { Button } from '@hister/components/ui/button';
   import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
-  import { Eye, X, Maximize2, Minimize2, History, MoreVertical, Video } from '@lucide/svelte';
+  import {
+    Eye,
+    X,
+    Maximize2,
+    Minimize2,
+    History,
+    MoreVertical,
+    ExternalLink,
+    Video,
+  } from '@lucide/svelte';
   import { untrack } from 'svelte';
 
   interface Props {
@@ -307,6 +317,18 @@
               </div>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            class="text-text-brand-muted hover:text-text-brand"
+            href={buildPreviewUrl(url, title || hintTitle, viewingVersion?.id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open direct preview"
+            aria-label="Open direct preview"
+          >
+            <ExternalLink class="size-4" />
+          </Button>
           {#if onfullscreentoggle}
             <Button
               variant="ghost"
