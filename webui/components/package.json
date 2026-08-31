@@ -9,7 +9,7 @@
     "./colors.css": "./src/colors.css"
   },
   "devDependencies": {
-    "@lucide/svelte": "^1.33.0",
+    "@lucide/svelte": "^1.35.0",
     "bits-ui": "^2.19.0",
     "clsx": "^2.1.1",
     "mode-watcher": "^1.1.0",
