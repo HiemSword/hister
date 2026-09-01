@@ -1036,10 +1036,7 @@ func (i *Indexer) Total() uint64 {
 }
 
 func (i *Indexer) TotalByUser(userID uint) uint64 {
-	uid := float64(userID)
-	q := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
-	q.SetField("user_id")
-	return i.total(q)
+	return i.total(userDocumentsQuery(userID))
 }
 
 func (i *Indexer) TotalFiles() uint64 {
@@ -1047,10 +1044,20 @@ func (i *Indexer) TotalFiles() uint64 {
 }
 
 func (i *Indexer) TotalFilesByUser(userID uint) uint64 {
+	return i.total(bleve.NewConjunctionQuery(fileTypeQuery(), userDocumentsQuery(userID)))
+}
+
+func userDocumentsQuery(userID uint) query.Query {
 	uid := float64(userID)
 	userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
 	userQuery.SetField("user_id")
-	return i.total(bleve.NewConjunctionQuery(fileTypeQuery(), userQuery))
+	if userID == 0 {
+		return userQuery
+	}
+	globalID := float64(0)
+	globalQuery := bleve.NewNumericRangeInclusiveQuery(&globalID, &globalID, new(true), new(true))
+	globalQuery.SetField("user_id")
+	return bleve.NewDisjunctionQuery(userQuery, globalQuery)
 }
 
 func fileTypeQuery() query.Query {
@@ -2051,15 +2058,7 @@ func (q *Query) create(text string) (query.Query, error) {
 	}
 
 	if q.UserID > 0 {
-		uid := float64(q.UserID)
-		userQuery := bleve.NewNumericRangeInclusiveQuery(&uid, &uid, new(true), new(true))
-		userQuery.SetField("user_id")
-		// userid 0 is preserved for global results
-		zeroF := float64(0)
-		globalQuery := bleve.NewNumericRangeInclusiveQuery(&zeroF, &zeroF, new(true), new(true))
-		globalQuery.SetField("user_id")
-		userOrGlobal := bleve.NewDisjunctionQuery(userQuery, globalQuery)
-		sq = bleve.NewConjunctionQuery(sq, userOrGlobal)
+		sq = bleve.NewConjunctionQuery(sq, userDocumentsQuery(q.UserID))
 	}
 
 	if !q.MatchAll && len(q.PriorityPatterns) > 0 {

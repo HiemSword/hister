@@ -430,12 +430,13 @@ func TestSearchFileTypeIncludesLocalAndRemoteFiles(t *testing.T) {
 	}
 }
 
-func TestTotalFilesIncludesLocalAndRemoteFilesAndScopesUsers(t *testing.T) {
+func TestTotalsIncludeGlobalDocumentsVisibleToUsers(t *testing.T) {
 	idx := newTestIndexer(t, testutil.Config(t))
 	defer idx.Close()
 
 	docs := []*document.Document{
-		{URL: "https://example.com/page", Type: document.Web, UserID: 1, Processed: true},
+		{URL: "https://example.com/page", Type: document.Web, Processed: true},
+		{URL: "file:///tmp/global.txt", Type: document.Local, Processed: true},
 		{URL: "file:///tmp/local.txt", Type: document.Local, UserID: 1, Processed: true},
 		{URL: "remote-file://laptop/tmp/README.md", Type: document.RemoteFile, UserID: 2, Processed: true},
 	}
@@ -445,17 +446,32 @@ func TestTotalFilesIncludesLocalAndRemoteFilesAndScopesUsers(t *testing.T) {
 		}
 	}
 
-	if got := idx.TotalFiles(); got != 2 {
-		t.Fatalf("file count = %d, want 2", got)
+	if got := idx.Total(); got != 4 {
+		t.Fatalf("document count = %d, want 4", got)
 	}
-	if got := idx.TotalFilesByUser(1); got != 1 {
-		t.Fatalf("user 1 file count = %d, want 1", got)
+	if got := idx.TotalFiles(); got != 3 {
+		t.Fatalf("file count = %d, want 3", got)
 	}
-	if got := idx.TotalFilesByUser(2); got != 1 {
-		t.Fatalf("user 2 file count = %d, want 1", got)
+	if got := idx.TotalByUser(0); got != 2 {
+		t.Fatalf("global document count = %d, want 2", got)
 	}
-	if got := idx.TotalFilesByUser(3); got != 0 {
-		t.Fatalf("user 3 file count = %d, want 0", got)
+	if got := idx.TotalByUser(1); got != 3 {
+		t.Fatalf("user 1 document count = %d, want 3", got)
+	}
+	if got := idx.TotalByUser(2); got != 3 {
+		t.Fatalf("user 2 document count = %d, want 3", got)
+	}
+	if got := idx.TotalFilesByUser(0); got != 1 {
+		t.Fatalf("global file count = %d, want 1", got)
+	}
+	if got := idx.TotalFilesByUser(1); got != 2 {
+		t.Fatalf("user 1 file count = %d, want 2", got)
+	}
+	if got := idx.TotalFilesByUser(2); got != 2 {
+		t.Fatalf("user 2 file count = %d, want 2", got)
+	}
+	if got := idx.TotalFilesByUser(3); got != 1 {
+		t.Fatalf("user 3 file count = %d, want 1", got)
 	}
 }
 
