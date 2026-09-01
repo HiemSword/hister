@@ -449,8 +449,7 @@ func initializeIndexer(basePath string, detectLanguages, keepStopwords bool, emb
 	}
 	for _, e := range entries {
 		fn := e.Name()
-		// TODO do more precise name check
-		if !strings.HasPrefix(fn, "index_") || !strings.HasSuffix(fn, ".db") {
+		if !isLanguageIndexName(fn) {
 			continue
 		}
 		if !detectLanguages {
@@ -561,7 +560,7 @@ func openReindexSources(basePath string, current map[string]bleve.Index) (map[st
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if !strings.HasPrefix(name, "index_") || !strings.HasSuffix(name, ".db") {
+		if !isLanguageIndexName(name) {
 			continue
 		}
 		if _, exists := sources[name]; exists {
@@ -1375,6 +1374,18 @@ func indexNameForLanguage(lang string) string {
 		return defaultIndexerName
 	}
 	return fmt.Sprintf(langIndexerName, lang)
+}
+
+func isLanguageIndexName(name string) bool {
+	const (
+		prefix = "index_"
+		suffix = ".db"
+	)
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+		return false
+	}
+	language := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix)
+	return registeredLanguageAnalyzer(language)
 }
 
 func (i *Indexer) addIndexer(name, lang string) error {

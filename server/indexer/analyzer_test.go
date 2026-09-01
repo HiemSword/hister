@@ -1,8 +1,12 @@
 package indexer
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/blevesearch/bleve/v2"
 )
 
 func analyzedTerms(t *testing.T, language string, keepStopwords bool, input string) []string {
@@ -98,5 +102,66 @@ func TestLanguageIndexesAreReindexSourcesWhenDetectionIsDisabled(t *testing.T) {
 	}
 	if sourceCount != 1 {
 		t.Fatalf("English source document count = %d, want 1", sourceCount)
+	}
+}
+
+func TestLanguageIndexNameValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]bool{
+		"index_en.db":        true,
+		"index_zh.db":        true,
+		"index_cjk.db":       true,
+		"index.db":           false,
+		"index_.db":          false,
+		"index_EN.db":        false,
+		"index_zz.db":        false,
+		"index_backup.db":    false,
+		"index_en.backup.db": false,
+		"prefix_index_en.db": false,
+	}
+	for name, want := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := isLanguageIndexName(name); got != want {
+				t.Fatalf("isLanguageIndexName(%q) = %v, want %v", name, got, want)
+			}
+		})
+	}
+}
+
+func TestInitializeIndexerIgnoresLanguageIndexLookalike(t *testing.T) {
+	dir := t.TempDir()
+	writeInvalidIndexLookalike(t, dir)
+
+	idx, err := initializeIndexer(dir, true, false, "")
+	if err != nil {
+		t.Fatalf("initialize indexer: %v", err)
+	}
+	defer idx.Close()
+	if _, exists := idx.indexers["index_backup.db"]; exists {
+		t.Fatal("language index lookalike was opened")
+	}
+}
+
+func TestOpenReindexSourcesIgnoresLanguageIndexLookalike(t *testing.T) {
+	dir := t.TempDir()
+	writeInvalidIndexLookalike(t, dir)
+
+	sources, closeSources, err := openReindexSources(dir, map[string]bleve.Index{})
+	if err != nil {
+		t.Fatalf("open reindex sources: %v", err)
+	}
+	defer closeSources()
+	if len(sources) != 0 {
+		t.Fatalf("reindex sources = %v, want none", sources)
+	}
+}
+
+func writeInvalidIndexLookalike(t *testing.T, dir string) {
+	t.Helper()
+	path := filepath.Join(dir, "index_backup.db")
+	if err := os.WriteFile(path, []byte("not a Bleve index"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
