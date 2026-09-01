@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -23,9 +22,10 @@ const (
 // OIDCOAuth implements OAuth 2.0 authentication for generic OpenID Connect providers.
 // It automatically discovers provider configuration from a well-known URL.
 type OIDCOAuth struct {
-	AuthURL     string `json:"authorization_endpoint"`
-	TokenURL    string `json:"token_endpoint"`
-	UserInfoURL string `json:"userinfo_endpoint"`
+	AuthURL     string       `json:"authorization_endpoint"`
+	TokenURL    string       `json:"token_endpoint"`
+	UserInfoURL string       `json:"userinfo_endpoint"`
+	Client      *http.Client `json:"-"`
 
 	Scopes       []ScopeValue   `json:"scopes_supported"`
 	ResponseType []ResponseType `json:"response_types_supported"`
@@ -40,17 +40,13 @@ func (o *OIDCOAuth) fetch(ctx context.Context) error {
 		return fmt.Errorf("oidc: failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := doRequest(o.Client, req)
 	if err != nil {
 		return fmt.Errorf("oidc: failed to fetch configuration: %w", err)
 	}
 	defer servererrors.LogCloseBody(resp.Body)
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("oidc: unexpected configuration response status code: %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := readResponseBody(resp)
 	if err != nil {
 		return fmt.Errorf("oidc: failed to read configuration response: %w", err)
 	}
@@ -138,7 +134,11 @@ func (o *OIDCOAuth) GetToken(ctx context.Context, req *TokenRequest) (*http.Resp
 
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	return http.DefaultClient.Do(tokenReq)
+	resp, err := doRequest(o.Client, tokenReq)
+	if err != nil {
+		return nil, fmt.Errorf("oidc: failed to exchange token: %w", err)
+	}
+	return resp, nil
 }
 
 // GetUserInfo fetches user information from the OIDC provider using the access token.
@@ -164,17 +164,13 @@ func (o *OIDCOAuth) GetUserInfo(ctx context.Context, response TokenResponse) (*U
 
 	req.Header.Set("Authorization", "Bearer "+bearer.AccessToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := doRequest(o.Client, req)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: failed to fetch UserInfo response: %w", err)
 	}
 	defer servererrors.LogCloseBody(resp.Body)
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oidc: unexpected UserInfo response status code: %d", resp.StatusCode)
-	}
-
-	uBody, err := io.ReadAll(resp.Body)
+	uBody, err := readResponseBody(resp)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: failed to read UserInfo response: %w", err)
 	}

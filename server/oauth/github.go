@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 
@@ -18,6 +17,7 @@ const scopeReadUser ScopeValue = "read:user"
 type GitHubOAuth struct {
 	AuthURL  string
 	TokenURL string
+	Client   *http.Client
 }
 
 // Prepare initializes the GitHub OAuth provider. No preparation needed for GitHub.
@@ -51,7 +51,11 @@ func (g GitHubOAuth) GetToken(ctx context.Context, req *TokenRequest) (*http.Res
 		return nil, errors.New("github: failed to create token request")
 	}
 
-	return http.DefaultClient.Do(tokenReq)
+	resp, err := doRequest(g.Client, tokenReq)
+	if err != nil {
+		return nil, fmt.Errorf("github: failed to exchange token: %w", err)
+	}
+	return resp, nil
 }
 
 // GetUserInfo fetches user information from GitHub using the access token.
@@ -73,13 +77,13 @@ func (g GitHubOAuth) GetUserInfo(ctx context.Context, response TokenResponse) (*
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := doRequest(g.Client, req)
 	if err != nil {
 		return nil, fmt.Errorf("github: failed to execute UserInfo request: %w", err)
 	}
 	defer servererrors.LogCloseBody(resp.Body)
 
-	uBody, err := io.ReadAll(resp.Body)
+	uBody, err := readResponseBody(resp)
 	if err != nil {
 		return nil, fmt.Errorf("github: failed to read UserInfo response: %w", err)
 	}

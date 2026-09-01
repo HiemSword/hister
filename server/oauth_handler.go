@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"io"
 	"net/http"
 	"time"
 
@@ -17,7 +16,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const oauthStateKey = "oauth_state"
+const (
+	oauthStateKey       = "oauth_state"
+	oauthRequestTimeout = 10 * time.Second
+)
 
 func generateOAuthState() (string, error) {
 	b := make([]byte, 16)
@@ -106,9 +108,9 @@ func serveOAuthCallback(c *webContext) {
 		serve500(c)
 		return
 	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), oauthRequestTimeout)
+	defer cancel()
 	if entry.ConfigurationURL != "" {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-		defer cancel()
 		if err := provider.Prepare(ctx, oauth.NewPrepareRequest(entry.ConfigurationURL)); err != nil {
 			log.Error().Err(err).Str("provider", providerName).Msg("oauth: failed to prepare provider")
 			serve500(c)
@@ -116,7 +118,7 @@ func serveOAuthCallback(c *webContext) {
 		}
 	}
 	callbackURL := c.Config.BaseURL("/api/oauth/callback") + "?provider=" + providerName
-	tokenResp, err := provider.GetToken(c.Request.Context(), oauth.NewTokenRequest(
+	tokenResp, err := provider.GetToken(ctx, oauth.NewTokenRequest(
 		entry.ClientID, entry.ClientSecret, code, callbackURL,
 	))
 	if err != nil {
@@ -125,13 +127,13 @@ func serveOAuthCallback(c *webContext) {
 		return
 	}
 	defer servererrors.LogCloseBody(tokenResp.Body)
-	tokenBody, err := io.ReadAll(tokenResp.Body)
+	tokenBody, err := oauth.ReadTokenResponse(tokenResp)
 	if err != nil {
 		log.Error().Err(err).Msg("oauth: failed to read token response")
 		serve500(c)
 		return
 	}
-	userInfo, err := provider.GetUserInfo(c.Request.Context(), oauth.TokenResponse(tokenBody))
+	userInfo, err := provider.GetUserInfo(ctx, tokenBody)
 	if err != nil {
 		log.Error().Err(err).Str("provider", providerName).Msg("oauth: failed to get user info")
 		serve500(c)

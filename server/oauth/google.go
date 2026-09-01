@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,6 +22,7 @@ const (
 type GoogleOAuth struct {
 	AuthURL  string
 	TokenURL string
+	Client   *http.Client
 }
 
 // Prepare initializes the Google OAuth provider. No preparation needed for Google.
@@ -59,7 +59,11 @@ func (g GoogleOAuth) GetToken(ctx context.Context, req *TokenRequest) (*http.Res
 
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	return http.DefaultClient.Do(tokenReq)
+	resp, err := doRequest(g.Client, tokenReq)
+	if err != nil {
+		return nil, fmt.Errorf("google: failed to exchange token: %w", err)
+	}
+	return resp, nil
 }
 
 // GetUserInfo fetches user information from Google using the access token.
@@ -79,13 +83,13 @@ func (g GoogleOAuth) GetUserInfo(ctx context.Context, response TokenResponse) (*
 		return nil, fmt.Errorf("google: failed to create UserInfo request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := doRequest(g.Client, req)
 	if err != nil {
 		return nil, fmt.Errorf("google: failed to execute UserInfo request: %w", err)
 	}
 	defer servererrors.LogCloseBody(resp.Body)
 
-	uBody, err := io.ReadAll(resp.Body)
+	uBody, err := readResponseBody(resp)
 	if err != nil {
 		return nil, fmt.Errorf("google: failed to read UserInfo response: %w", err)
 	}
