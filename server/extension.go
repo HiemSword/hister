@@ -46,6 +46,19 @@ func browserExtensionRequest(origin, path string) bool {
 	return trustedBrowserExtensionOrigin(origin) && browserExtensionAPIPath(path)
 }
 
+// extensionCORSAllowHeaders returns the response Access-Control-Allow-Headers
+// value. Safari preflights every extension fetch and lists the actual request
+// headers in Access-Control-Request-Headers; echoing that list keeps
+// user-configured custom headers (reverse-proxy auth, etc.) working. When no
+// preflight header is present, fall back to the headers the extension always
+// sends.
+func extensionCORSAllowHeaders(r *http.Request) string {
+	if requested := r.Header.Get("Access-Control-Request-Headers"); requested != "" {
+		return requested
+	}
+	return "Content-Type, X-Access-Token, X-Hister-Public, X-CSRF-Token, Authorization"
+}
+
 // withExtensionCORS answers CORS preflight and attaches CORS headers for
 // requests that come from a trusted browser-extension origin on the extension
 // API surface.
@@ -64,7 +77,7 @@ func withExtensionCORS(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("Access-Control-Allow-Origin", origin)
 		h.Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
-		h.Set("Access-Control-Allow-Headers", "Content-Type, X-Access-Token, X-Hister-Public, X-CSRF-Token, Authorization")
+		h.Set("Access-Control-Allow-Headers", extensionCORSAllowHeaders(r))
 		h.Set("Access-Control-Allow-Credentials", "true")
 		h.Set("Access-Control-Max-Age", "600")
 		h.Add("Vary", "Origin")

@@ -28,6 +28,23 @@ func TestExtensionCORSPreflightAllowsSafari(t *testing.T) {
 	}
 }
 
+func TestExtensionCORSPreflightEchoesCustomRequestHeaders(t *testing.T) {
+	_, handler := newTokenTestServer(t, false)
+	origin := "safari-web-extension://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	requested := "content-type,x-access-token,x-proxy-auth"
+	rec := testutil.ServeHTTP(t, handler, http.MethodOptions, "/api/add", nil, map[string]string{
+		"Origin":                         origin,
+		"Access-Control-Request-Method":  "POST",
+		"Access-Control-Request-Headers": requested,
+	})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("OPTIONS /api/add status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != requested {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want echoed %q", got, requested)
+	}
+}
+
 func TestExtensionCORSPreflightRejectsUntrustedOrigin(t *testing.T) {
 	_, handler := newTokenTestServer(t, false)
 	rec := testutil.ServeHTTP(t, handler, http.MethodOptions, "/api/add", nil, map[string]string{
