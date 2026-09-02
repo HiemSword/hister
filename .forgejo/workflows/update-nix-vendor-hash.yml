@@ -20,15 +20,15 @@ jobs:
         uses: cachix/install-nix-action@v31.10.6
 
       - name: Update Nix hashes
-        run: ./nix/update-nix-vendor-hash.sh
+        run: nix run nixpkgs#nix-update -- --flake --use-update-script hister
 
       - name: Check for changes
         id: git-check
         run: |
           if git diff --quiet nix/package.nix; then
-            echo "changed=false" >> $FORGEJO_OUTPUT
+            echo "changed=false" >> "$FORGEJO_OUTPUT"
           else
-            echo "changed=true" >> $FORGEJO_OUTPUT
+            echo "changed=true" >> "$FORGEJO_OUTPUT"
           fi
 
       - name: Create Pull Request

@@ -3,6 +3,7 @@
   buildGoModule,
   buildNpmPackage,
   importNpmLock,
+  nix-update-script,
   sqlite,
   yt-dlp,
   makeBinaryWrapper,
@@ -81,6 +82,15 @@ buildGoModule (finalAttrs: {
 
   passthru = {
     inherit frontend;
+    updateScript = nix-update-script {
+      attrPath = "hister";
+      extraArgs = [
+        "--flake"
+        "--version=skip"
+        "--no-src"
+        "--build"
+      ];
+    };
   };
 
   meta = {
