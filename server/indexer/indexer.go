@@ -60,6 +60,7 @@ type Indexer struct {
 	vectorStore       vectorstore.VectorStore
 	embedCtx          context.Context
 	embedCancel       context.CancelFunc
+	maintenance       *maintenanceRunner
 	embeddingQueue    *embeddingQueue
 	embeddingWorkers  int
 	disablePreviews   bool
@@ -71,9 +72,10 @@ type Indexer struct {
 }
 
 const (
-	defaultIndexerName = "index.db"
-	langIndexerName    = "index_%s.db"
-	updatedBackfillKey = "hister.updated_backfill_complete"
+	defaultIndexerName  = "index.db"
+	langIndexerName     = "index_%s.db"
+	updatedBackfillKey  = "hister.updated_backfill_complete"
+	updatedBackfillSize = 200
 )
 
 type Query struct {
@@ -382,6 +384,7 @@ func New(cfg *config.Config) (*Indexer, error) {
 		idx.Close()
 		return nil, err
 	}
+	idx.startMaintenance()
 	return idx, nil
 }
 
@@ -429,6 +432,7 @@ func initializeIndexer(basePath string, detectLanguages, keepStopwords bool, emb
 		keepStopwords: keepStopwords,
 		embedCtx:      embedCtx,
 		embedCancel:   embedCancel,
+		maintenance:   newMaintenanceRunner(),
 		data:          newDataStore(filepath.Join(basePath, dataDirName)),
 		maxFileSize:   defaultMaxFileSize,
 	}
@@ -466,23 +470,47 @@ func initializeIndexer(basePath string, detectLanguages, keepStopwords bool, emb
 		i.indexers[fn] = langIdx
 		i.indexesMu.Unlock()
 	}
-	if err := i.backfillUpdatedTimestamps(); err != nil {
-		return nil, err
-	}
 	if created {
 		if err := writeIndexMetadata(idx, configuredIndexMetadata(detectLanguages, keepStopwords, embeddingFingerprint)); err != nil {
 			return nil, fmt.Errorf("store initial index metadata: %w", err)
+		}
+		if err := idx.SetInternal([]byte(updatedBackfillKey), []byte("1")); err != nil {
+			return nil, fmt.Errorf("store initial updated timestamp backfill marker: %w", err)
 		}
 	}
 	initialized = true
 	return i, nil
 }
 
+func (i *Indexer) startMaintenance() {
+	i.maintenance.start(
+		maintenanceTask{
+			name: "updated timestamp backfill",
+			run: func(ctx context.Context) error {
+				return i.backfillUpdatedTimestamps(ctx, updatedBackfillSize)
+			},
+		},
+	)
+}
+
+func (i *Indexer) waitForMaintenance() error {
+	if i.maintenance == nil {
+		return nil
+	}
+	return i.maintenance.wait()
+}
+
 // backfillUpdatedTimestamps exists only for backward compatibility with
 // indexes created before Document.Updated was added. Remove this function and
 // its marker after support for those indexes is no longer needed.
-func (i *Indexer) backfillUpdatedTimestamps() error {
+func (i *Indexer) backfillUpdatedTimestamps(ctx context.Context, batchSize int) error {
+	if batchSize < 1 {
+		return errors.New("updated timestamp backfill batch size must be positive")
+	}
 	for name, idx := range i.indexes() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		marker, err := idx.GetInternal([]byte(updatedBackfillKey))
 		if err != nil {
 			return fmt.Errorf("read updated timestamp backfill marker for %s: %w", name, err)
@@ -496,28 +524,36 @@ func (i *Indexer) backfillUpdatedTimestamps() error {
 		missingUpdated := query.NewBooleanQuery(nil, nil, []query.Query{updatedExists})
 		req := bleve.NewSearchRequest(missingUpdated)
 		req.Fields = allFields
-		req.Size = 200
+		req.Size = batchSize + 1
 		req.SortBy([]string{"_id"})
 
 		count := 0
-		var sortKey []string
 		for {
-			if len(sortKey) > 0 {
-				req.SetSearchAfter(sortKey)
+			if err := ctx.Err(); err != nil {
+				return err
 			}
 			res, err := idx.Search(req)
 			if err != nil {
 				return fmt.Errorf("find documents missing updated timestamp in %s: %w", name, err)
 			}
 			if len(res.Hits) == 0 {
+				if err := idx.SetInternal([]byte(updatedBackfillKey), []byte("1")); err != nil {
+					return fmt.Errorf("save updated timestamp backfill marker for %s: %w", name, err)
+				}
 				break
 			}
 
+			complete := len(res.Hits) <= batchSize
+			hits := res.Hits
+			if !complete {
+				hits = hits[:batchSize]
+			}
 			batch := idx.NewBatch()
-			for _, hit := range res.Hits {
+			for _, hit := range hits {
 				added, ok := hit.Fields["added"]
 				if !ok {
-					return fmt.Errorf("backfill updated timestamp for %s: document %s has no added timestamp", name, hit.ID)
+					log.Warn().Str("index", name).Str("document", hit.ID).Msg("Backfilling missing updated timestamp with zero because added timestamp is missing")
+					added = int64(0)
 				}
 				fields := maps.Clone(hit.Fields)
 				fields["updated"] = added
@@ -525,16 +561,21 @@ func (i *Indexer) backfillUpdatedTimestamps() error {
 					return fmt.Errorf("backfill updated timestamp for %s: %w", name, err)
 				}
 			}
+			if complete {
+				batch.SetInternal([]byte(updatedBackfillKey), []byte("1"))
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if err := idx.Batch(batch); err != nil {
 				return fmt.Errorf("save updated timestamp backfill for %s: %w", name, err)
 			}
-			count += len(res.Hits)
-			sortKey = res.Hits[len(res.Hits)-1].Sort
+			count += len(hits)
+			if complete {
+				break
+			}
 		}
 
-		if err := idx.SetInternal([]byte(updatedBackfillKey), []byte("1")); err != nil {
-			return fmt.Errorf("save updated timestamp backfill marker for %s: %w", name, err)
-		}
 		if count > 0 {
 			log.Info().Str("index", name).Int("documents", count).Msg("Backfilled updated timestamps")
 		}
@@ -826,6 +867,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 			queueStopped = false
 		}
 	}
+	idx.startMaintenance()
 	if err := os.RemoveAll(tmpBasePath); err != nil {
 		return err
 	}
@@ -1420,6 +1462,11 @@ func (i *Indexer) addIndexer(name, lang string) error {
 		removeErr := os.RemoveAll(indexPath)
 		return errors.Join(err, closeErr, removeErr)
 	}
+	if err := idx.SetInternal([]byte(updatedBackfillKey), []byte("1")); err != nil {
+		closeErr := idx.Close()
+		removeErr := os.RemoveAll(indexPath)
+		return errors.Join(err, closeErr, removeErr)
+	}
 	i.indexers[name] = idx
 	i.idx.Add(idx)
 	return nil
@@ -1430,16 +1477,20 @@ func (i *Indexer) Close() {
 	if i.embedCancel != nil {
 		i.embedCancel()
 	}
+	if i.maintenance != nil {
+		i.maintenance.stop()
+	}
 	if i.vectorStore != nil {
 		if err := i.vectorStore.Close(); err != nil {
 			log.Warn().Err(err).Msg("failed to close vector store")
 		}
 	}
 	i.indexCreationMu.Lock()
-	defer i.indexCreationMu.Unlock()
 	i.indexesMu.Lock()
-	defer i.indexesMu.Unlock()
 	if i.indexesClosed {
+		i.indexesMu.Unlock()
+		i.indexCreationMu.Unlock()
+		_ = i.waitForMaintenance()
 		return
 	}
 	i.indexesClosed = true
@@ -1451,6 +1502,9 @@ func (i *Indexer) Close() {
 	if err := i.idx.Close(); err != nil {
 		log.Warn().Err(err).Msg("failed to close index alias")
 	}
+	i.indexesMu.Unlock()
+	i.indexCreationMu.Unlock()
+	_ = i.waitForMaintenance()
 }
 
 func (i *Indexer) adopt(replacement *Indexer) {
@@ -1470,6 +1524,7 @@ func (i *Indexer) adopt(replacement *Indexer) {
 	i.vectorStore = replacement.vectorStore
 	i.embedCtx = replacement.embedCtx
 	i.embedCancel = replacement.embedCancel
+	i.maintenance = replacement.maintenance
 	i.embeddingQueue = replacement.embeddingQueue
 	i.embeddingWorkers = replacement.embeddingWorkers
 	i.disablePreviews = replacement.disablePreviews

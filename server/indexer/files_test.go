@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -659,6 +660,9 @@ func TestInitBackfillsLegacyUpdatedTimestamp(t *testing.T) {
 
 	svc = newTestIndexer(t, idxCfg)
 	defer svc.Close()
+	if err := svc.waitForMaintenance(); err != nil {
+		t.Fatalf("updated timestamp backfill failed: %v", err)
+	}
 
 	doc := svc.GetByURLAndUser(url, 0)
 	if doc == nil {
@@ -671,6 +675,128 @@ func TestInitBackfillsLegacyUpdatedTimestamp(t *testing.T) {
 		t.Fatalf("metadata topic = %#v, want compatibility", doc.Metadata["topic"])
 	}
 	marker, err := svc.indexers[defaultIndexerName].GetInternal([]byte(updatedBackfillKey))
+	if err != nil {
+		t.Fatalf("failed to read backfill marker: %v", err)
+	}
+	if len(marker) == 0 {
+		t.Fatal("backfill marker was not stored")
+	}
+}
+
+func TestUpdatedTimestampBackfillProcessesMultipleBatches(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+	if err := idx.waitForMaintenance(); err != nil {
+		t.Fatalf("initial updated timestamp backfill failed: %v", err)
+	}
+
+	subIndex := idx.indexers[defaultIndexerName]
+	batch := subIndex.NewBatch()
+	urls := make([]string, 5)
+	for n := range urls {
+		urls[n] = fmt.Sprintf("https://example.com/legacy-updated/%d", n)
+		legacy := map[string]any{
+			"url":       urls[n],
+			"title":     fmt.Sprintf("Legacy document %d", n),
+			"added":     int64(1000 + n),
+			"type":      int64(0),
+			"user_id":   int64(0),
+			"add_count": int64(1),
+		}
+		if err := batch.Index(document.GetDocID(0, urls[n]), legacy); err != nil {
+			t.Fatalf("failed to prepare legacy document: %v", err)
+		}
+	}
+	if err := subIndex.Batch(batch); err != nil {
+		t.Fatalf("failed to index legacy documents: %v", err)
+	}
+	if err := subIndex.DeleteInternal([]byte(updatedBackfillKey)); err != nil {
+		t.Fatalf("failed to clear backfill marker: %v", err)
+	}
+
+	if err := idx.backfillUpdatedTimestamps(context.Background(), 2); err != nil {
+		t.Fatalf("updated timestamp backfill failed: %v", err)
+	}
+	for n, url := range urls {
+		doc := idx.GetByURLAndUser(url, 0)
+		if doc == nil {
+			t.Fatalf("backfilled document %d not found", n)
+		}
+		want := int64(1000 + n)
+		if doc.Added != want || doc.Updated != want {
+			t.Fatalf("document %d timestamps are Added=%d Updated=%d, want both %d", n, doc.Added, doc.Updated, want)
+		}
+	}
+	marker, err := subIndex.GetInternal([]byte(updatedBackfillKey))
+	if err != nil {
+		t.Fatalf("failed to read backfill marker: %v", err)
+	}
+	if len(marker) == 0 {
+		t.Fatal("backfill marker was not stored")
+	}
+}
+
+func TestUpdatedTimestampBackfillHonorsCancellation(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+	if err := idx.waitForMaintenance(); err != nil {
+		t.Fatalf("initial updated timestamp backfill failed: %v", err)
+	}
+
+	subIndex := idx.indexers[defaultIndexerName]
+	if err := subIndex.DeleteInternal([]byte(updatedBackfillKey)); err != nil {
+		t.Fatalf("failed to clear backfill marker: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := idx.backfillUpdatedTimestamps(ctx, 2); !errors.Is(err, context.Canceled) {
+		t.Fatalf("backfill error = %v, want context.Canceled", err)
+	}
+	marker, err := subIndex.GetInternal([]byte(updatedBackfillKey))
+	if err != nil {
+		t.Fatalf("failed to read backfill marker: %v", err)
+	}
+	if len(marker) != 0 {
+		t.Fatal("canceled backfill stored its completion marker")
+	}
+}
+
+func TestUpdatedTimestampBackfillHandlesMissingAddedTimestamp(t *testing.T) {
+	idx := newTestIndexer(t, testutil.Config(t))
+	defer idx.Close()
+	if err := idx.waitForMaintenance(); err != nil {
+		t.Fatalf("initial updated timestamp backfill failed: %v", err)
+	}
+
+	subIndex := idx.indexers[defaultIndexerName]
+	url := "https://example.com/legacy-without-added"
+	legacy := map[string]any{
+		"url":       url,
+		"title":     "Legacy document without added timestamp",
+		"type":      int64(0),
+		"user_id":   int64(0),
+		"add_count": int64(1),
+	}
+	if err := subIndex.Index(document.GetDocID(0, url), legacy); err != nil {
+		t.Fatalf("failed to index legacy document: %v", err)
+	}
+	if err := subIndex.DeleteInternal([]byte(updatedBackfillKey)); err != nil {
+		t.Fatalf("failed to clear backfill marker: %v", err)
+	}
+
+	if err := idx.backfillUpdatedTimestamps(context.Background(), 2); err != nil {
+		t.Fatalf("updated timestamp backfill failed: %v", err)
+	}
+	updatedExists := bleve.NewNumericRangeQuery(nil, nil)
+	updatedExists.SetField("updated")
+	result, err := subIndex.Search(bleve.NewSearchRequest(updatedExists))
+	if err != nil {
+		t.Fatalf("failed to find updated timestamp: %v", err)
+	}
+	if result.Total != 1 {
+		t.Fatalf("documents with an updated timestamp = %d, want 1", result.Total)
+	}
+	marker, err := subIndex.GetInternal([]byte(updatedBackfillKey))
 	if err != nil {
 		t.Fatalf("failed to read backfill marker: %v", err)
 	}
