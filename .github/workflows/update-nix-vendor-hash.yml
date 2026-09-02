@@ -11,7 +11,6 @@ on:
       - package-lock.json
       - nix/package.nix
       - .github/workflows/update-nix-vendor-hash.yml
-      - nix/update-nix-vendor-hash.sh
   workflow_dispatch:
 
 permissions:
@@ -31,15 +30,15 @@ jobs:
         uses: cachix/install-nix-action@v31.11.1
 
       - name: Update Nix hashes
-        run: ./nix/update-nix-vendor-hash.sh
+        run: nix run nixpkgs#nix-update -- --flake --use-update-script hister
 
       - name: Check for changes
         id: git-check
         run: |
           if git diff --quiet nix/package.nix; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create Pull Request
