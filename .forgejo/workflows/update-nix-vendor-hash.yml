@@ -20,6 +20,8 @@ jobs:
         uses: cachix/install-nix-action@v31.10.6
 
       - name: Update Nix hashes
+        env:
+          NIX_PATH: nixpkgs=flake:nixpkgs
         run: nix run nixpkgs#nix-update -- --flake --use-update-script hister
 
       - name: Check for changes
