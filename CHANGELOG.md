@@ -1,5 +1,120 @@
 # Changelog
 
+## v0.19.0
+
+### New Features
+
+#### ChatGPT and Hacker News Extractors
+
+New ChatGPT and Hacker News extractors preserve complete conversations and
+discussion threads. ChatGPT extraction keeps visible user and assistant turns,
+including headings, lists, tables, code blocks, and safe links. It supports
+authenticated conversations, public shares, and custom GPT conversation URLs.
+
+Hacker News extraction records submission metadata, optional post text, and the
+complete nested comment tree. Shared discussion utilities also improve how
+Reddit and Discourse comments are represented.
+
+#### URL Regular Expression Search and Cleanup
+
+Queries can now use `url_re:` to match normalized document URLs with Go regular
+expressions. Matching supports anchors, case folding, negation, and grouped
+alternatives. Invalid or excessively long expressions return a clear error.
+
+The delete API supports a `dry_run` mode that counts matches without changing
+the index. The Rules page and result actions can use this preview to delete
+documents that match a new or edited skip rule. Hister shows the match count
+and asks for confirmation while keeping the saved rule if deletion is canceled.
+
+#### Safari History Imports
+
+`hister import browser` can now import Safari history on macOS, including visit
+counts and start date filtering. Browser databases are detected from their
+schema instead of their filename, which also resolves ambiguous Safari and
+Ladybird database names. Permission errors explain the Full Disk Access setting
+required by macOS.
+
+#### Terminal Focus and Native Appearance
+
+The terminal interface now separates search input from result navigation.
+Keyboard, pointer, and scroll actions move focus predictably, while contextual
+shortcuts and feedback reflect the active area. Dialogs, tabs, rules, previews,
+and narrow layouts have more consistent navigation and pointer behavior.
+
+The new default `terminal` appearance inherits the terminal foreground,
+background, and ANSI palette. The Settings overlay can switch among terminal,
+automatic, dark, and light modes, while the theme picker remains available for
+choosing complete Hister themes.
+
+#### Richer Suggestions and Previews
+
+OpenSearch suggestions now include pinned and history results before index
+matches, together with descriptions and direct target URLs. Local and remote
+file suggestions open the appropriate file or readable preview.
+
+Readable previews display document type, language, label, visit count,
+ownership, and extractor metadata. They also provide links to the source and a
+standalone preview. Exact document identifiers keep previews and version
+history on the correct document when users index the same URL separately.
+
+### Enhancements
+
+1. **Home page**: indexed pages, files, rules, and aliases use compact clickable
+   statistics, including a direct file search.
+2. **Web navigation**: frequently used destinations are visible again, and the
+   menu provides automatic, light, and dark appearance choices.
+3. **User administration**: `hister update-user --password` can assign or change
+   a password, including for an account originally created through OAuth. Token
+   regeneration now requires confirmation in the profile interface.
+4. **Semantic search**: index metadata records the embedding configuration and
+   warns when stored vectors need reindexing. PostgreSQL configurations are
+   validated against the 2000 dimension limit of its HNSW vector index.
+5. **Indexer maintenance**: compatibility backfills run in interruptible
+   background batches, so older indexes no longer delay server startup.
+6. **Operations**: `/health` is available outside any configured base path.
+   Generated pages avoid stale caching while immutable assets use long lived
+   cache headers.
+7. **OAuth**: provider discovery, token exchange, and profile requests now have
+   bounded request timeouts.
+8. **Video extraction**: the `ytdlp` extractor accepts an `extra_domains` list
+   for additional supported sites. Archive.org pages no longer invoke it by
+   default.
+9. **Configuration documentation**: settings show their server or client scope,
+   environment overrides appear earlier, and config path precedence is clearer.
+10. **Nix**: the flake uses the upstream NixOS Hister module, and dependency
+    hashes are maintained through `nix-update`.
+11. **Dependencies**: Go modules, npm packages, container bases, Nix inputs, and
+    GitHub Actions were updated.
+
+### Bug Fixes
+
+1. Local files pass through the normal processing chain during reindexing, and
+   Markdown snapshots remain classified as local files.
+2. File statistics include global documents in multiple user mode.
+3. Preview content and archived versions resolve by exact document identifier
+   instead of selecting another user's copy of the same URL.
+4. Partial rule updates preserve any omitted rule groups.
+5. Search suggestions no longer contain duplicates.
+6. Input method composition no longer starts searches before text composition
+   completes.
+7. Leaving the search page no longer displays an expected WebSocket error.
+8. PostgreSQL semantic search rejects unsupported vector dimensions before
+   attempting to create the vector store.
+9. `GET /mcp` returns method not allowed instead of the web application.
+10. The container health check works when Hister uses a nonroot base URL.
+11. Safari browser extension origins are accepted by CSRF validation.
+12. Unrelated files whose names resemble language indexes are ignored.
+13. Bleve keeps its established open file allowance, avoiding index failures
+    without reducing performance.
+
+### Backward Compatibility Notes
+
+The following changes require attention when upgrading from v0.18.0:
+
+1. **Nix flake**: `x86_64-darwin` is no longer exported because Nix 26.11 does
+   not support it. The Hister flake module now relies on the upstream
+   `services.hister` module supplied by nixpkgs.
+
 ## v0.18.0
 
 ### New Features
