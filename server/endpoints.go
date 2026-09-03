@@ -89,7 +89,7 @@ func registerEndpoints(cfg *config.Config, idx *indexer.Indexer) http.Handler {
 	mux.HandleFunc("GET /opensearch.xml", createHandler(cfg, idx, serveOpensearch))
 	mux.HandleFunc("/", createHandler(cfg, idx, serveSPA))
 	// If base_url contains a path prefix, require it for application routes.
-	appHandler := http.Handler(mux)
+	appHandler := withExtensionCORS(http.Handler(mux))
 	basePrefix := cfg.BasePathPrefix()
 	if basePrefix != "" {
 		appHandler = withOptionalBasePathPrefix(basePrefix, appHandler)

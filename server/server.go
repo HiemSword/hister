@@ -349,23 +349,12 @@ func withCSRF(handler endpointHandler) endpointHandler {
 			handler(c)
 			return
 		}
-		// Allow add, config requests from the addons
-		for _, p := range []string{"/add", "/api/add", "/api/add_pdf", "/api/config", "/api/rules", "/api/delete", "/api/label", "/api/versions"} {
-			if c.Request.URL.Path != p {
-				continue
-			}
-			if strings.HasPrefix(c.Request.Header.Get("Origin"), "moz-extension://") {
-				handler(c)
-				return
-			}
-			if strings.HasPrefix(c.Request.Header.Get("Origin"), "safari-web-extension://") {
-				handler(c)
-				return
-			}
-			if c.Request.Header.Get("Origin") == "chrome-extension://cciilamhchpmbdnniabclekddabkifhb" {
-				handler(c)
-				return
-			}
+		// Allow the browser extensions to call their API surface without a
+		// web-session CSRF token. Origin is browser-controlled, so a web
+		// page cannot spoof moz-extension:// / safari-web-extension://.
+		if browserExtensionRequest(c.Request.Header.Get("Origin"), c.Request.URL.Path) {
+			handler(c)
+			return
 		}
 
 		session, err := sessionStore.Get(c.Request, storeName)
