@@ -1416,7 +1416,7 @@ func (i *Indexer) getOrCreate(lang string) bleve.Index {
 }
 
 func indexNameForLanguage(lang string) string {
-	if lang == document.UnknownLanguage || lang == "" {
+	if lang == document.UnknownLanguage || lang == "" || !registeredLanguageAnalyzer(lang) {
 		return defaultIndexerName
 	}
 	return fmt.Sprintf(langIndexerName, lang)
