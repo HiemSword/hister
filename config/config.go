@@ -851,7 +851,7 @@ func (c *Config) SecretKey() []byte {
 }
 
 func (c *Config) FullPath(f string) string {
-	if strings.HasPrefix(f, "/") {
+	if filepath.IsAbs(f) {
 		return f
 	}
 	if strings.HasPrefix(f, "./") || strings.HasPrefix(f, "../") {

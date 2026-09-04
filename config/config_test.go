@@ -16,6 +16,15 @@ func restoreEnv(key, value string, existed bool) {
 	_ = os.Unsetenv(key)
 }
 
+func TestFullPathPreservesAbsolutePath(t *testing.T) {
+	absolutePath := t.TempDir()
+	cfg := Config{App: App{Directory: t.TempDir()}}
+
+	if got := cfg.FullPath(absolutePath); got != absolutePath {
+		t.Fatalf("FullPath(%q) = %q, want absolute path unchanged", absolutePath, got)
+	}
+}
+
 func TestServerDefaults(t *testing.T) {
 	oldAddress := DefaultServerAddress
 	oldBaseURL := DefaultServerBaseURL
