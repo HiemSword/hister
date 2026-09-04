@@ -441,6 +441,19 @@ func TestPreviewWithSubtitles(t *testing.T) {
 	}
 }
 
+func TestDownloadThumbnailRejectsOversizedResponse(t *testing.T) {
+	thumbnail := strings.Repeat("x", maxThumbSize+1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = fmt.Fprint(w, thumbnail)
+	}))
+	t.Cleanup(srv.Close)
+
+	if got := (&YtdlpExtractor{}).downloadThumbnail(t.Context(), srv.URL); got != "" {
+		t.Fatalf("downloadThumbnail() returned %d bytes for an oversized response", len(got))
+	}
+}
+
 // newTestExtractorFr creates an extractor configured with a French-language video
 // JSON and the given sub_language setting.
 func newTestExtractorFr(t *testing.T, subLang string) *YtdlpExtractor {

@@ -334,8 +334,8 @@ func (e *YtdlpExtractor) downloadThumbnail(ctx context.Context, thumbnailURL str
 		return ""
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxThumbSize))
-	if err != nil {
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxThumbSize+1))
+	if err != nil || len(data) > maxThumbSize {
 		return ""
 	}
 
