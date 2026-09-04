@@ -128,7 +128,7 @@ func TestFindDirUserWithHomeExpansion(t *testing.T) {
 	testutil.InitModel(t)
 
 	home := ExpandHome("~/")
-	if home == "~/ " {
+	if home == "~/" {
 		t.Skip("could not expand home directory")
 	}
 
