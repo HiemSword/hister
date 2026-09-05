@@ -728,6 +728,12 @@ func serveVersions(c *webContext) {
 	c.JSON(versions)
 }
 
+// shouldSkipSubmission checks URL skip rules unless the document carries an
+// explicit override. Other document validation and authorization still apply.
+func shouldSkipSubmission(c *webContext, d *document.Document) bool {
+	return !d.IgnoreSkipRules() && c.effectiveRules().IsSkip(d.URL)
+}
+
 func serveAdd(c *webContext) {
 	m := c.Request.Method
 	if m == http.MethodGet {
@@ -764,7 +770,7 @@ func serveAdd(c *webContext) {
 		http.Error(c.Response, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !c.effectiveRules().IsSkip(d.URL) && !c.Config.IsSameHost(d.URL) {
+	if !shouldSkipSubmission(c, d) && !c.Config.IsSameHost(d.URL) {
 		d.UserID = submittedDocumentUserID(c)
 		rules := c.effectiveRules()
 		var existingDoc *document.Document
@@ -871,7 +877,7 @@ func serveAddPDF(c *webContext) {
 	}
 
 	d := req.Document
-	if c.effectiveRules().IsSkip(d.URL) || c.Config.IsSameHost(d.URL) {
+	if shouldSkipSubmission(c, d) || c.Config.IsSameHost(d.URL) {
 		log.Debug().Str("url", d.URL).Msg("skip indexing pdf")
 		c.Response.WriteHeader(http.StatusNotAcceptable)
 		return
@@ -1935,7 +1941,7 @@ func serveBatch(c *webContext) {
 			}
 			d := &op.Document
 			d.UserID = uid
-			if c.effectiveRules().IsSkip(d.URL) || strings.HasPrefix(d.URL, c.Config.BaseURL("/")) {
+			if shouldSkipSubmission(c, d) || strings.HasPrefix(d.URL, c.Config.BaseURL("/")) {
 				results[i] = batchOpResult{Status: http.StatusNotAcceptable, Error: "url skipped by rules"}
 				continue
 			}

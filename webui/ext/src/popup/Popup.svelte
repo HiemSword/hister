@@ -166,10 +166,7 @@
   async function checkTabSkipRule(tabURL: string) {
     try {
       const response = await chrome.runtime.sendMessage({ action: 'checkSkipRule', url: tabURL });
-      if (response?.isSkipped) {
-        isPageSkipped = true;
-        setInfoMessage('This page is excluded from indexing by a skip rule');
-      }
+      isPageSkipped = response?.isSkipped === true;
     } catch (_) {}
   }
 
@@ -262,22 +259,22 @@
   }
 
   function reindex() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (!tabs?.length) return;
-      chrome.tabs.sendMessage(tabs[0].id!, { action: 'reindex' }, (r) => {
-        if (r?.status === 'ok' && r.status_code === 201) {
-          setSuccessMessage('Index successful');
-          return;
-        }
-        let msg = 'Reindex failed';
-        if (r?.error) {
-          msg += ': ' + r.error;
-        }
-        if (r?.status_code === 403) {
-          msg += ': Unauthorized';
-        }
-        setErrorMessage(msg);
-      });
+    chrome.runtime.sendMessage({ action: 'indexCurrentPage' }, (r) => {
+      const error = chrome.runtime.lastError;
+      if (r?.status === 'ok' && r.status_code === 201) {
+        setSuccessMessage('Index successful');
+        return;
+      }
+      let msg = 'Reindex failed';
+      if (error) {
+        msg += ': ' + error.message;
+      } else if (r?.error) {
+        msg += ': ' + r.error;
+      }
+      if (r?.status_code === 403) {
+        msg += ': Unauthorized';
+      }
+      setErrorMessage(msg);
     });
   }
 
@@ -425,8 +422,13 @@
     </div>
 
     <!-- Reindex section -->
-    {#if !isPageSkipped}
+    {#if tabURL}
       <div class="border-brutal-border border-b-[3px] px-5 py-4">
+        {#if isPageSkipped}
+          <p class="text-text-brand mb-3 text-sm">
+            A skip rule blocks automatic indexing. You can still index this page manually.
+          </p>
+        {/if}
         <Button
           variant="outline"
           onclick={reindex}

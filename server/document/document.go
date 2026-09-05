@@ -22,6 +22,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// MetadataIgnoreSkipRules records an explicit override of URL skip rules.
+const MetadataIgnoreSkipRules = "ignore_skip_rules"
+
 type Document struct {
 	DocumentID string         `json:"id,omitempty"`
 	URL        string         `json:"url"`
@@ -330,6 +333,18 @@ func (d *Document) AddMetadata(k string, v any) {
 	} else {
 		d.Metadata[k] = v
 	}
+}
+
+// IgnoreSkipRules reports whether this document was explicitly allowed through
+// URL skip rules. The metadata survives export, import, and index rebuilds.
+func (d *Document) IgnoreSkipRules() bool {
+	ignore, _ := d.Metadata[MetadataIgnoreSkipRules].(bool)
+	return ignore
+}
+
+// SetIgnoreSkipRules records whether URL skip rules may be bypassed.
+func (d *Document) SetIgnoreSkipRules(ignore bool) {
+	d.AddMetadata(MetadataIgnoreSkipRules, ignore)
 }
 
 // GetPreviewMeta returns the document's normalized metadata (merged

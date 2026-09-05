@@ -257,14 +257,15 @@ type indexBatch struct {
 }
 
 type storedDocumentState struct {
-	htmlKeys    []string
-	faviconKeys []string
-	texts       []string
-	indexNames  map[string]struct{}
-	addCount    uint
-	found       bool
-	label       string
-	added       int64
+	ignoreSkipRules bool
+	htmlKeys        []string
+	faviconKeys     []string
+	texts           []string
+	indexNames      map[string]struct{}
+	addCount        uint
+	found           bool
+	label           string
+	added           int64
 }
 
 func (s storedDocumentState) embeddingTextChanged(text string) bool {
@@ -793,7 +794,7 @@ func (idx *Indexer) reindex(ctx context.Context, basePath string, rules *config.
 						return abortReindex(err)
 					}
 				}
-				if rules.IsSkip(d.URL) {
+				if !d.IgnoreSkipRules() && rules.IsSkip(d.URL) {
 					log.Info().Str("URL", d.URL).Msg("Dropping URL that has since been added to skip rules.")
 					continue
 				}
@@ -1134,6 +1135,9 @@ func (i *Indexer) addDocument(ctx context.Context, d *document.Document, increme
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if d.IgnoreSkipRules() {
+			extra.SetIgnoreSkipRules(true)
+		}
 		if err := i.addDocument(ctx, extra, false, write); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -1212,6 +1216,10 @@ func (i *Indexer) saveWithState(d *document.Document, state storedDocumentState)
 
 func (i *Indexer) prepareStorageWrite(d *document.Document, state storedDocumentState) (documentWritePlan, error) {
 	plan := documentWritePlan{}
+	// An ordinary update must not erase an earlier explicit indexing choice.
+	if _, supplied := d.Metadata[document.MetadataIgnoreSkipRules]; !supplied && state.ignoreSkipRules {
+		d.SetIgnoreSkipRules(true)
+	}
 	existingIndexes := state.indexNames
 	if existingIndexes == nil {
 		indexes := i.indexes()
@@ -1280,7 +1288,7 @@ func (i *Indexer) getStoredDocumentState(id string) storedDocumentState {
 	var state storedDocumentState
 	q := bleve.NewDocIDQuery([]string{id})
 	req := bleve.NewSearchRequest(q)
-	req.Fields = []string{"html_key", "favicon_key", "language", "add_count", "label", "added"}
+	req.Fields = []string{"html_key", "favicon_key", "language", "add_count", "label", "added", "metadata." + document.MetadataIgnoreSkipRules}
 	if i.embedder != nil && i.vectorStore != nil {
 		req.Fields = append(req.Fields, "text")
 	}
@@ -1301,6 +1309,9 @@ func (i *Indexer) getStoredDocumentState(id string) storedDocumentState {
 	state.found = true
 	state.addCount = 1
 	for _, h := range res.Hits {
+		if ignore, _ := h.Fields["metadata."+document.MetadataIgnoreSkipRules].(bool); ignore {
+			state.ignoreSkipRules = true
+		}
 		indexName := h.Index
 		if indexName == "" {
 			lang, _ := h.Fields["language"].(string)
