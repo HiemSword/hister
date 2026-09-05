@@ -61,6 +61,23 @@ func (e *Endpoint) Pattern() string {
 // Endpoints contains all registered API endpoints.
 var Endpoints []*Endpoint
 
+const skipRulesOverrideDescription = " Set metadata.ignore_skip_rules to boolean true in the submitted JSON document to bypass URL skip rules. The saved metadata also bypasses skip rules on import and reindex. Other validation still applies."
+
+func documentMetadataSchema() *JSONSchemaField {
+	return &JSONSchemaField{
+		Name:        "metadata",
+		Type:        "object",
+		Description: "Additional document metadata",
+		Fields: []*JSONSchemaField{
+			{
+				Name:        "ignore_skip_rules",
+				Type:        "bool",
+				Description: "Explicitly bypass URL skip rules for this document, including during index rebuilds. Only boolean true enables the override.",
+			},
+		},
+	}
+}
+
 func init() {
 	Endpoints = []*Endpoint{
 		{
@@ -248,7 +265,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveAdd,
-			Description:  "Index a document. Accepts either application/x-www-form-urlencoded or application/json.",
+			Description:  "Index a document. Accepts either application/x-www-form-urlencoded or application/json." + skipRulesOverrideDescription,
 			Args: []*EndpointArg{
 				{
 					Name:        "url",
@@ -318,6 +335,7 @@ func init() {
 					Required:    false,
 					Description: "Source modification time as a Unix timestamp for remote file snapshots",
 				},
+				documentMetadataSchema(),
 			},
 		},
 		// alias for /api/add - backward compatibility - use /api/add in the future
@@ -327,7 +345,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveAdd,
-			Description:  "Index a document (legacy path; prefer /api/add)",
+			Description:  "Index a document (legacy path; prefer /api/add)." + skipRulesOverrideDescription,
 			Args: []*EndpointArg{
 				{
 					Name:        "url",
@@ -379,6 +397,7 @@ func init() {
 					Required:    false,
 					Description: "Base64-encoded favicon data URI",
 				},
+				documentMetadataSchema(),
 			},
 		},
 		{
@@ -387,7 +406,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveAddPDF,
-			Description:  "Index a PDF document. Accepts application/json with a document object and base64-encoded PDF content.",
+			Description:  "Index a PDF document. Accepts application/json with a document object and base64-encoded PDF content." + skipRulesOverrideDescription,
 			JSONSchema: []*JSONSchemaField{
 				{
 					Name:        "document",
@@ -413,6 +432,7 @@ func init() {
 							Required:    false,
 							Description: "User-defined label",
 						},
+						documentMetadataSchema(),
 					},
 				},
 				{
@@ -896,7 +916,7 @@ func init() {
 			Method:       POST,
 			CSRFRequired: true,
 			Handler:      serveBatch,
-			Description:  "Execute up to 100 add/delete/get operations in a single request (body limit configured by server.max_batch_body_size, default 40 MiB)",
+			Description:  "Execute up to 100 add/delete/get operations in a single request (body limit configured by server.max_batch_body_size, default 40 MiB). Each add operation has its own metadata." + skipRulesOverrideDescription,
 			JSONSchema: []*JSONSchemaField{
 				{
 					Name:        "ops",
@@ -940,6 +960,7 @@ func init() {
 							Required:    false,
 							Description: "Base64-encoded favicon data URI (add only)",
 						},
+						documentMetadataSchema(),
 					},
 				},
 			},

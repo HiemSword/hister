@@ -106,7 +106,15 @@ Automatic indexing can be paused at any time using the toggle in the popup.
 
 ### Manual Reindex
 
-The **Reindex Page** button in the popup forces an immediate re-submission of the current page, regardless of whether it has changed. This is useful after clearing your server's index or when a page failed to index automatically (indicated by a `!` badge on the extension icon).
+The **Index this page now** button in the popup immediately submits the current
+page or PDF, even when automatic indexing is disabled or a skip rule matches.
+The indexing keyboard shortcut does the same. This is useful when you exclude a
+domain from automatic indexing but want to save an individual page from it.
+
+Manual indexing saves a skip rule override with the document, so it survives an
+index rebuild. It leaves your skip rules and automatic indexing setting intact;
+later automatic submissions still respect them. Sensitive content checks and
+normal access restrictions still apply.
 
 ### Keyboard Shortcuts
 

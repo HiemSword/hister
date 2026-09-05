@@ -9,6 +9,7 @@ const missingURLMsg = {
 
 type CustomHeader = { name: string; value: string };
 type SkipRuleType = 'url' | 'domain';
+type IndexingResult = { status?: string; status_code?: number; error?: string };
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -274,7 +275,11 @@ function isPDFUrl(url: string): boolean {
   }
 }
 
-async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
+async function indexPDFTab(
+  tabId: number,
+  tab: chrome.tabs.Tab,
+  ignoreSkipRules = false,
+): Promise<IndexingResult> {
   const data = await chrome.storage.local.get([
     'histerURL',
     'histerToken',
@@ -285,19 +290,19 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
     'submitPublicDocuments',
   ]);
 
-  if (data['indexingEnabled'] === false) return;
+  if (data['indexingEnabled'] === false && !ignoreSkipRules) return { status: 'disabled' };
 
   const serverURL: string = data['histerURL'] || '';
-  if (!serverURL) return;
+  if (!serverURL) return missingURLMsg;
 
   const showIndexedBadge: boolean = data['showIndexedBadge'] === true;
 
   const customHeaders = getDocumentSubmissionHeaders(data);
 
   const patterns = await getSkipPatterns(serverURL, customHeaders);
-  if (patterns.some((re) => re.test(tab.url!))) {
+  if (!ignoreSkipRules && patterns.some((re) => re.test(tab.url!))) {
     await setGreyIcon(tabId);
-    return;
+    return { status: 'ok', status_code: 406 };
   }
 
   const u = serverURL.endsWith('/') ? serverURL : serverURL + '/';
@@ -306,7 +311,7 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
     const response = await fetch(tab.url!, { credentials: 'include' });
     if (!response.ok) {
       setErrorBadge(tabId);
-      return;
+      return { error: `Failed to fetch PDF: ${response.status}` };
     }
     const buffer = await response.arrayBuffer();
     const bytes = new Uint8Array(buffer);
@@ -320,6 +325,9 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
       url: tab.url!,
       title: tab.title || tab.url!,
     };
+    if (ignoreSkipRules) {
+      doc.metadata = { ignore_skip_rules: true };
+    }
     if (data['histerLabel']) {
       doc['label'] = data['histerLabel'];
     }
@@ -341,8 +349,10 @@ async function indexPDFTab(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
     } else {
       setErrorBadge(tabId);
     }
+    return { status: 'ok', status_code: r.status };
   } catch (err) {
     setErrorBadge(tabId);
+    return { error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -396,17 +406,28 @@ async function isUrlPreviouslyIndexed(
   }
 }
 
-async function indexCurrentTab(): Promise<void> {
+async function indexCurrentTab(): Promise<IndexingResult> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return;
+  if (!tab?.id) return { error: 'No active tab found' };
 
-  chrome.tabs.sendMessage(tab.id, { action: 'reindex' }, (response) => {
-    if (chrome.runtime.lastError || response?.status_code !== 201) {
-      setErrorBadge(tab.id!);
-      return;
-    }
-    setPreviouslyIndexedBadge(tab.id!);
-    setTimeout(() => clearBadge(tab.id!), 2500);
+  if (tab.url && isPDFUrl(tab.url)) {
+    return indexPDFTab(tab.id, tab, true);
+  }
+
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tab.id!, { action: 'reindex' }, (response) => {
+      const error = chrome.runtime.lastError;
+      if (error || response?.status_code !== 201) {
+        setErrorBadge(tab.id!);
+        resolve(
+          error ? { error: error.message } : (response ?? { error: 'No response from page' }),
+        );
+        return;
+      }
+      setPreviouslyIndexedBadge(tab.id!);
+      setTimeout(() => clearBadge(tab.id!), 2500);
+      resolve(response);
+    });
   });
 }
 
@@ -452,6 +473,12 @@ chrome.commands?.onCommand?.addListener((command) => {
 
 // TODO check source
 function cjsMsgHandler(request, sender, sendResponse) {
+  if (request.action === 'indexCurrentPage') {
+    indexCurrentTab()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
   chrome.storage.local
     .get([
       'histerURL',
@@ -520,6 +547,9 @@ function cjsMsgHandler(request, sender, sendResponse) {
         }
         chrome.storage.local.get(['histerLabel']).then((labelData) => {
           const pageData = { ...request.pageData };
+          if (request.action === 'reindex') {
+            pageData.metadata = { ...pageData.metadata, ignore_skip_rules: true };
+          }
           if (labelData['histerLabel']) {
             pageData.label = labelData['histerLabel'];
           }

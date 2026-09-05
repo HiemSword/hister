@@ -374,6 +374,9 @@ func (i *Indexer) reloadLocalFile(path string, info fs.FileInfo, source *documen
 		Label:    source.Label,
 		AddCount: source.AddCount,
 	}
+	if source.IgnoreSkipRules() {
+		d.SetIgnoreSkipRules(true)
+	}
 	if err := i.prepareLocalFile(path, info, d); err != nil {
 		return nil, err
 	}

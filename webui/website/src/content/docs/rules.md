@@ -18,6 +18,21 @@ Skip rules prevent matching URLs from being added to the index. When a URL
 matches any pattern in the skip list, Hister silently discards the document
 during indexing and during `hister reindex`.
 
+To save an individual page that matches a skip rule, click **Index this page now**
+in the browser extension or use its indexing shortcut. This explicitly overrides
+skip rules for that submission and saves the choice with the document, so the
+page survives `hister reindex`. Automatic submissions still respect the rule.
+
+API clients can set `metadata.ignore_skip_rules` to the boolean `true` in JSON
+documents submitted to `/api/add` or `/add`. For `/api/add_pdf`, it belongs inside
+`document.metadata`; for `/api/batch`, each add operation has its own metadata.
+The override is stored with the document and preserved in exported documents.
+
+The override applies only to URL skip rules. Authentication, ownership, sensitive
+content checks, and the exclusion of Hister's own URLs still apply. Accepted
+updates preserve an existing override unless they explicitly submit
+`metadata.ignore_skip_rules: false`. Explicit deletion still removes the document.
+
 **Use cases**: block ad networks, login pages, cookie-consent walls, or any
 site you never want in your search results.
 
