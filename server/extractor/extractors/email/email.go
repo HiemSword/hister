@@ -1,19 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package extractor_template is a starting point for implementing a new Hister
-// extractor. To use it:
-//
-//  1. Copy this directory to server/extractor/extractors/<myname>/.
-//  2. Rename the directory (remove the leading "_" so Go picks it up).
-//  3. Change the package declaration below to match the new directory name.
-//  4. Rename TemplateExtractor to something descriptive.
-//  5. Update matchURLPrefix (and the Match function) for your target site.
-//  6. Implement Extract and Preview.
-//  7. Register the extractor in DefaultExtractors in registry.go.
-//
-// The directory name starts with "_" so the Go toolchain ignores it during
-// normal builds. That means this file is never compiled as-is, but it is valid
-// Go so editors and linters can still analyse it.
+// Package email provides an extractor for locally indexed Email files.
 package email
 
 import (
